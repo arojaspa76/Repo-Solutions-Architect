@@ -1,0 +1,11 @@
+# FAQ – Plataforma LLM Local
+Q: ¿Qué es este servicio?
+A: Una API local con FastAPI que usa Ollama (modelo Llama 3) para responder preguntas.
+
+Q: ¿Se conecta a internet?
+A: No para la Opción A (Ollama). Sí para la Opción B (OpenAI API).
+
+Q: ¿Cómo agrego mis documentos?
+A: Coloca .txt en ./data/ y ejecuta index.py para indexarlos con embeddings.
+
+

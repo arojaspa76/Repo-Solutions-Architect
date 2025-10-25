@@ -1,0 +1,4 @@
+# Guía Rápida
+- Inicia Ollama y descarga modelos: 'ollama pull llama3' y 'ollama pull nomic-embed-text'.
+- Ejecuta 'python index.py' para indexar ./data/.
+- Ejecuta 'uvicorn app_rag:app --host 0.0.0.0 --port 8080' para RAG, o 'uvicorn app:app ...' sin RAG.

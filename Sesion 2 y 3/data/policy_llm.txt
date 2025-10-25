@@ -1,0 +1,4 @@
+# Política de Uso – Demo Local
+1. No ingreses datos sensibles en esta demo.
+2. Verifica manualmente las respuestas antes de decisiones importantes.
+3. Mantén actualizado el conjunto de documentos en ./data/.

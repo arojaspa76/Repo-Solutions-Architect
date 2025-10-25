@@ -1,0 +1,7 @@
+langchain
+chromadb
+tiktoken
+requests
+fastapi
+uvicorn
+pydantic
