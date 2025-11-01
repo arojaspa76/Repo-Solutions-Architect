@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-cv-deployment
+  labels:
+    app: rag-cv
+spec:
+  replicas: 3   # número de pods (escala inicial)
+  selector:
+    matchLabels:
+      app: rag-cv
+  template:
+    metadata:
+      labels:
+        app: rag-cv
+    spec:
+      containers:
+        - name: rag-cv
+          image: ghcr.io/arojaspa/rag-cv-app:1.0
+          ports:
+            - containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1       # asigna una GPU (si disponible)
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+          env:
+            - name: ENVIRONMENT
+              value: "production"
