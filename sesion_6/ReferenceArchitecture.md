@@ -10,30 +10,33 @@ When it comes to large language model (LLM) applications in the cloud, each of t
 ### 1. Azure – Azure AI Foundry + Azure OpenAI
 #### 1.1. Key Official Architectures
 
-1. Basic / Baseline Azure AI Foundry Chat Reference Architecture
+##### 1. Basic / Baseline Azure AI Foundry Chat Reference Architecture
 * Client (web/app) → Agent Service in Foundry → Azure OpenAI.
 * The agent orchestrates grounding (RAG), data store calls, and tools.
 * Designed for simple enterprise chat, but already includes:
     * Foundry Agent Service as the orchestrator.
     * Connection to Azure AI Search, Cosmos DB, SQL, etc. for grounding.
 
-2. RAG Solution Design and Evaluation Guide
+##### 2. RAG Solution Design and Evaluation Guide
 
 * Formal RAG Reference Architecture:
     * Client Application → API/Backend → Orchestrator/Prompt Flow → Azure AI Search (vector/semantic index) + storage (Blob, Data Lake) → Azure OpenAI for generation.
 * Includes considerations for: chunking, evaluation, human feedback, automated evaluation, etc.
 
-3. RAG Tutorial with Azure OpenAI + Azure AI Search (.NET + Blazor)
+##### 3. RAG Tutorial with Azure OpenAI + Azure AI Search (.NET + Blazor)
 
 * Concrete diagram: Blazor App → Azure App Service → Azure AI Search + Azure OpenAI.
 * Shows the complete chat flow with grounding, citing sources.
 
-4. Azure OpenAI Architecture Patterns & Landing Zones
+##### 4. Azure OpenAI Architecture Patterns & Landing Zones
 
 * Patrones típicos:
     * AOAI + Front Door / App Gateway / APIM.
     * Multi-region, failover, seguridad con Private Link, RBAC, Key Vault.
 * [Repo de landing zone con arquitecturas enterprise, Bicep/Terraform y diagramas.](https://techcommunity.microsoft.com/blog/azure-ai-foundry-blog/azure-openai-architecture-patterns-and-implementation-steps/3979934?utm_source=chatgpt.com)
+
+
+**Useful URLs (with diagrams)**
 
 ```text
 Azure – Basic AI Foundry Chat Reference Architecture
