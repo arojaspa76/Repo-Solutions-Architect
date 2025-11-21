@@ -4,7 +4,7 @@ When it comes to large language model (LLM) applications in the cloud, each of t
 
 ## • Azure  
 - **Article**: “Baseline Microsoft Foundry Chat Reference Architecture”  
-  URL: https://learn.microsoft.com/en-us/azure/architecture/ai-ml/architecture/baseline-azure-ai-foundry-chat :contentReference[oaicite:0]{index=0}  
+  URL: https://learn.microsoft.com/en-us/azure/architecture/ai-ml/architecture/baseline-azure-ai-foundry-chat
 - **Description**: Shows how to build and deploy an enterprise chat application using Azure AI Foundry + Azure OpenAI. Includes UI layer, agent/orchestrator, data stores (for grounding), private network integration, managed identity, and security controls.
 
 ### 1. Azure – Azure AI Foundry + Azure OpenAI
@@ -58,12 +58,12 @@ https://github.com/Azure/azure-openai-landing-zone
 
 ## • AWS  
 - **Page**: “AWS Reference Architecture Diagrams”  
-  URL: https://aws.amazon.com/architecture/reference-architecture-diagrams/ :contentReference[oaicite:1]{index=1}  
+  URL: https://aws.amazon.com/architecture/reference-architecture-diagrams/
 - **Description**: A library of diagrams built by AWS that cover generative AI, machine learning, data lakes, and agent-based workloads. While not always specific to LLMs, they serve as high-level reference for AI/ML architecture on AWS.
 
 ## • GCP (Google Cloud Platform)  
 - **Page**: “AI and machine learning resources | Cloud Architecture Center”  
-  URL: https://cloud.google.com/architecture/ai-ml :contentReference[oaicite:2]{index=2}  
+  URL: https://cloud.google.com/architecture/ai-ml  
 - **Description**: Offers generative AI, agentic AI, RAG, ML Ops reference architectures. Includes design guides and reference diagrams on deploying AI/ML workloads at enterprise scale on Google Cloud.
 
 ---
