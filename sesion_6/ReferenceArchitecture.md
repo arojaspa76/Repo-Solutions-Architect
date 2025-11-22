@@ -37,27 +37,12 @@ When it comes to large language model (LLM) applications in the cloud, each of t
 
 **Useful URLs (with diagrams)**
 
-```text
-Azure – Basic AI Foundry Chat Reference Architecture
-https://learn.microsoft.com/en-us/azure/architecture/ai-ml/architecture/basic-azure-ai-foundry-chat
-
-Azure – Baseline AI Foundry Chat Reference Architecture
-https://learn.microsoft.com/en-us/azure/architecture/ai-ml/architecture/baseline-azure-ai-foundry-chat
-
-Azure – RAG Solution Design and Evaluation Guide
-https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/rag/rag-solution-design-and-evaluation-guide
-
-Azure – RAG app with Azure OpenAI + Azure AI Search (.NET tutorial)
-https://learn.microsoft.com/en-us/azure/app-service/tutorial-ai-openai-search-dotnet
-
-Azure – Azure OpenAI architecture patterns (TechCommunity)
-https://techcommunity.microsoft.com/blog/azure-ai-foundry-blog/azure-openai-architecture-patterns-and-implementation-steps/3979934
-
-Azure – Azure OpenAI Landing Zone reference architectures (GitHub)
-https://github.com/Azure/azure-openai-landing-zone
-```
-
----
+[Azure – Basic AI Foundry Chat Reference Architecture](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/architecture/basic-azure-ai-foundry-chat)  
+[Azure – Baseline AI Foundry Chat Reference Architecture](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/architecture/baseline-azure-ai-foundry-chat)  
+[Azure – RAG Solution Design and Evaluation Guide](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/rag/rag-solution-design-and-evaluation-guide)  
+[Azure – RAG app with Azure OpenAI + Azure AI Search (.NET tutorial)](https://learn.microsoft.com/en-us/azure/app-service/tutorial-ai-openai-search-dotnet)  
+[Azure – Azure OpenAI architecture patterns (TechCommunity)](https://techcommunity.microsoft.com/blog/azure-ai-foundry-blog/azure-openai-architecture-patterns-and-implementation-steps/3979934)  
+[Azure – Azure OpenAI Landing Zone reference architectures (GitHub)](https://github.com/Azure/azure-openai-landing-zone)
 
 ## 2. AWS – Amazon Bedrock + GenAI Reference Architectures  
 - **Page**: “AWS Reference Architecture Diagrams”  
@@ -113,22 +98,10 @@ Governance & Security:
 
 #### 2.3. URLs with diagrams
 
-```text
-AWS – Amazon Bedrock main (overview + diagrams)
-https://aws.amazon.com/bedrock/
-
-AWS – Bedrock Generative AI Application Architecture (RAG)
-https://builder.aws.com/content/2f2d59922DQNz3iH1pCTeudpmhv/aws-bedrock-generative-ai-application-architecture
-
-AWS – AI gateway to Amazon Bedrock with API Gateway
-https://aws.amazon.com/blogs/architecture/building-an-ai-gateway-to-amazon-bedrock-with-amazon-api-gateway/
-
-AWS – Bedrock Architectures (GitHub: diagrams + templates)
-https://github.com/aws-samples/amazon-bedrock-architectures
-
-```
-
---- 
+[AWS – Amazon Bedrock main (overview + diagrams)](https://aws.amazon.com/bedrock/)  
+[AWS – Bedrock Generative AI Application Architecture (RAG)](https://builder.aws.com/content/2f2d59922DQNz3iH1pCTeudpmhv/aws-bedrock-generative-ai-application-architecture)  
+[AWS – AI gateway to Amazon Bedrock with API Gateway](https://aws.amazon.com/blogs/architecture/building-an-ai-gateway-to-amazon-bedrock-with-amazon-api-gateway/)  
+[AWS – Bedrock Architectures (GitHub: diagrams + templates)](https://github.com/aws-samples/amazon-bedrock-architectures)
 
 ## 3. Google Cloud – Vertex AI / Gemini GenAI 
 - **Page**: “AI and machine learning resources | Cloud Architecture Center”  
@@ -179,18 +152,9 @@ In the diagrams, you'll see something like this:
 
 ### 3.3. URLs with Diagrams
 
-```text
-Google Cloud – Generative AI overview
-https://cloud.google.com/ai/generative-ai
+[Google Cloud – Generative AI overview](https://cloud.google.com/ai/generative-ai)  
+[Google Cloud – Vertex AI platform](https://cloud.google.com/vertex-ai)  
+[Google Cloud – RAG-capable Generative AI app (GKE + Cloud SQL + LangChain)](https://cloud.google.com/docs/generative-ai#infrastructure-for-a-rag-capable-generative-ai-application-using-gke-and-cloud-sql)  
+[Google Cloud – Architecting GenAI applications with Google Cloud (diagramas en el post)](https://medium.com/google-cloud/architecting-genai-applications-with-google-cloud-b38c9cbc66e0)
 
-Google Cloud – Vertex AI platform
-https://cloud.google.com/vertex-ai
-
-Google Cloud – RAG-capable Generative AI app (GKE + Cloud SQL + LangChain)
-https://cloud.google.com/docs/generative-ai#infrastructure-for-a-rag-capable-generative-ai-application-using-gke-and-cloud-sql
-
-Google Cloud – Architecting GenAI applications with Google Cloud (diagramas en el post)
-https://medium.com/google-cloud/architecting-genai-applications-with-google-cloud-b38c9cbc66e0
-
-```
 ---
