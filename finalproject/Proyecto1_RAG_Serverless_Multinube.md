@@ -264,7 +264,7 @@ Obligatorio un diagrama de arquitectura multinube que incluya: luir elementos de
 
 ## 12. Documentación Final
 
-### Formato de la documantación:
+### Formato de la documentación:
 - Documento del proyecto - Guia de Usuario
 - Documento del proyecto - Guia de Administrador
 - Arquitectura  
