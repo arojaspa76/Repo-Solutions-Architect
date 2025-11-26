@@ -5,7 +5,7 @@
 **Profesor:** Msc, PgP, Andrés Felipe Rojas Parra  
 **Cargo:** Chief Artificial Intelligence Officer  
 **Correo:** andres.rojas@triskelss.com  
-**Nivel:** Avanzado / Maestría  
+**Nivel:** Avanzado  
 **Modalidad:** LLM Data Engineering + Pipelines + Indexing + Embeddings
 
 ---
