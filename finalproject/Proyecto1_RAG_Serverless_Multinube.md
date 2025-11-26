@@ -1,8 +1,9 @@
 # PROYECTO 1 – RAG Serverless Multinube (Azure + AWS o Azure + GCP)
+## "Serverless Cross-Cloud RAG Platform for LLMs"
 
 **Curso:** Diseño de Infraestructura Escalable BSG Institute  
 **Profesor:** Msc, PgP, Andrés Felipe Rojas Parra  
-**Cargo:** Chief Artificial Intelligence Office  
+**Cargo:** Chief Artificial Intelligence Officer  
 **Correo:** andres.rojas@triskelss.com  
 **Nivel:** Avanzado  
 **Modalidad:** Multicloud + Serverless + LLM + RAG  

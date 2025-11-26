@@ -1,8 +1,9 @@
 # PROYECTO 3 – Arquitectura de Agentes con Serverless y Tools
-## “LLM Agentic Architecture with Serverless Tools Integration”
+## "LLM Agentic Architecture with Serverless Tools Integration"
+
 **Curso:** Diseño de Infraestructura Escalable BSG Institute  
 **Profesor:** Msc, PgP, Andrés Felipe Rojas Parra  
-**Cargo:** Chief Artificial Intelligence Office  
+**Cargo:** Chief Artificial Intelligence Officer  
 **Correo:** andres.rojas@triskelss.com  
 **Nivel:** Avanzado  
 **Modalidad:** LLM Agents + Serverless + Tool-Calling + Workflow Orchestration

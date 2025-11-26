@@ -1,8 +1,9 @@
 # PROYECTO 2 – LLM Autoscalable sobre Kubernetes (AKS/EKS/GKE)
+## "Autoscaling LLM API on Kubernetes with GPU Nodes"
 
 **Curso:** Diseño de Infraestructura Escalable BSG Institute  
 **Profesor:** Msc, PgP, Andrés Felipe Rojas Parra  
-**Cargo:** Chief Artificial Intelligence Office  
+**Cargo:** Chief Artificial Intelligence Officer  
 **Correo:** andres.rojas@triskelss.com  
 **Nivel:** Avanzado  
 **Modalidad:** Kubernetes + GPU Autoscaling + LLM Serving + DevOps
