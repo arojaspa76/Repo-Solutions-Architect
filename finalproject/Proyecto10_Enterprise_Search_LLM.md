@@ -4,7 +4,7 @@
 **Curso:** Diseño de Infraestructura Escalable BSG Institute  
 **Profesor:** Msc, PgP, Andrés Felipe Rojas Parra  
 **Cargo:** Chief Artificial Intelligence Officer  
-**Correo:** andres.rojas@triskelss.com
+**Correo:** andres.rojas@triskelss.com  
 **Nivel:** Avanzado  
 **Modalidad:** Enterprise Search + Semantic Indexing + Multi-Modal RAG + Re-ranking
 
