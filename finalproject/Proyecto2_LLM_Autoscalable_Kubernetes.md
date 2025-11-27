@@ -235,7 +235,7 @@ Debe incluir:
 
 ---
 
-## 12. Documentación Final (20–25 páginas)
+## 12. Documentación Final
 
 ### Formato de la documentación:
 - Documento del proyecto - Guia de Usuario

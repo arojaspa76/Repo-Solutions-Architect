@@ -230,7 +230,7 @@ Herramientas:
 
 ---
 
-## 12. Documentación Final Profesional (20–25 páginas)  
+## 12. Documentación Final Profesional
 
 ### Formato de la documentación:
 - Documento del proyecto - Guia de Usuario
