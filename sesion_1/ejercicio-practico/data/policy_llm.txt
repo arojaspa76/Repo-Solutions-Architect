@@ -1,0 +1,6 @@
+# Política de Uso – Asistente LLM
+1. El asistente no reemplaza asesoría legal o médica. Las respuestas son de apoyo.
+2. No subir datos personales sensibles (PII) ni información confidencial sin autorización.
+3. Las fuentes deben tener versión y responsable de mantenimiento.
+4. Los usuarios deben validar las respuestas antes de decisiones críticas.
+5. Incidentes de seguridad deben reportarse según el manual de SGSI.

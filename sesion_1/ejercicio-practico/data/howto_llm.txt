@@ -1,0 +1,5 @@
+# Guía Rápida de Usuario
+- Escribe preguntas claras y específicas.
+- Cuando el asistente cite documentos, verifica la fuente y fecha.
+- Usa keywords internas (nombres de procesos, códigos de política) para mejor recuperación.
+- Si no encuentras lo que buscas, intenta dividir tu pregunta en pasos.

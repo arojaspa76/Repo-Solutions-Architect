@@ -1,0 +1,15 @@
+# FAQ – Plataforma LLM Interna
+Q: ¿Qué es el asistente LLM interno?
+A: Es un servicio de chat basado en Azure OpenAI, integrado con búsqueda semántica en Azure AI Search.
+
+Q: ¿Qué tipo de información responde?
+A: Preguntas frecuentes, políticas internas y procedimientos operativos que hayan sido indexados.
+
+Q: ¿Cómo se mantienen actualizados los contenidos?
+A: A través de un pipeline de ingesta (ETL) que sube nuevos documentos y reindexa embeddings.
+
+Q: ¿La herramienta guarda mis conversaciones?
+A: Sólo metadatos mínimos para mejorar soporte y monitoreo. El contenido puede anonimizarse según política.
+
+Q: ¿Qué hacer si la respuesta parece incorrecta?
+A: Usa el botón de feedback o reporta el caso al equipo de datos para revisión del dataset.
