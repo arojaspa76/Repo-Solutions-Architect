@@ -533,7 +533,11 @@ az aks enable-addons -g llm-rg -n llm-aks -a ingress-appgw \
 
 ### B3) Ingress para AGIC (anotaciones)
 
-Ejemplo mínimo para enrutar tráfico a `llmapi-svc` con TLS (cert en App Gateway):
+Archivo: **`ingress-agic-tls.yaml`**
+
+> Reemplaza `<YOUR_HOSTNAME>` por tu dominio real (ej. `llmapi.example.com`).
+>
+> **Sobre el TLS:** la terminación TLS ocurre en el Application Gateway (`WAF_v2` / `Standard_v2`). El campo `secretName: dummy-tls` es un **placeholder** requerido por el spec de Kubernetes Ingress — AGIC lo ignora y usa el certificado configurado directamente en el **Listener** del App Gateway. No es necesario que exista un Secret real con ese nombre para que el enrutamiento funcione.
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -544,10 +548,10 @@ metadata:
     kubernetes.io/ingress.class: azure/application-gateway
 spec:
   tls:
-  - hosts: ["llmapi.midominio.com"]
-    secretName: dummy-tls    # AGIC usará el cert del App Gateway Listener
+  - hosts: ["<YOUR_HOSTNAME>"]
+    secretName: dummy-tls    # placeholder – AGIC usa el cert del App Gateway Listener
   rules:
-  - host: llmapi.midominio.com
+  - host: <YOUR_HOSTNAME>
     http:
       paths:
       - path: /
@@ -559,13 +563,54 @@ spec:
               number: 80
 ```
 
-> **Notas:** configura el Listener / HTTP Settings / Backend Pools en el App Gateway. Si usas WAF, define reglas y exclusiones. Para Private Link + App Gateway, integra con Private DNS Zones.
+### B4) Secret TLS Placeholder (opcional)
+
+Archivo: **`dummy-tls-secret.yaml`**
+
+Si Kubernetes requiere que el Secret exista (algunos controladores lo validan), crea uno vacío. **No es el certificado real del Gateway.**
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dummy-tls
+type: kubernetes.io/tls
+data:
+  tls.crt: ""
+  tls.key: ""
+```
+
+### B5) Aplicar los manifiestos
+
+```bash
+kubectl apply -f dummy-tls-secret.yaml    # opcional
+kubectl apply -f ingress-agic-tls.yaml
+```
+
+> **Notas finales:** configura el Listener / HTTP Settings / Backend Pools en el App Gateway. Si usas WAF, define reglas y exclusiones. Para Private Link + App Gateway, integra con Private DNS Zones.
 
 ---
 
 ## Apéndice C — Dataset Real + Chunking para RAG (tiktoken)
 
 **Objetivo:** mejorar la recuperación y precisión RAG partiendo documentos en fragmentos ("chunks") con solapamiento y metadatos.
+
+### C0) Mini Dataset de Ejemplo
+
+La guía incluye un conjunto de documentos de prueba en la carpeta `./data/`, que debe estar en el mismo directorio que el notebook `Notebook_Azure_RAG_Indexing.ipynb`:
+
+```
+./data/
+├── faq_llm.txt       # Preguntas frecuentes del asistente LLM
+├── policy_llm.txt    # Política de uso del asistente
+└── howto_llm.txt     # Guía rápida de uso
+```
+
+> Si ubicas la carpeta en otra ruta, ajusta la variable `DATA_DIR` en el notebook:
+>
+> ```python
+> DATA_DIR = "./data"   # ← cambia a la ruta donde esté la carpeta
+> ```
 
 ### C1) Paquetes y Función de Chunking
 
