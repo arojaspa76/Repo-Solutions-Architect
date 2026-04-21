@@ -1,0 +1,28 @@
+1) Ingress para AGIC + TLS (con host y notas)
+
+Archivo: ingress-agic-tls.yaml
+
+Reemplazar <YOUR_HOSTNAME> por el dominio (ej. llmapi.example.com).
+
+TLS se termina en Application Gateway (WAF_v2/Standard_v2). El secretName es un placeholder para cumplir con el spec de Ingress; AGIC usa el cert configurado en el Listener del App Gateway.
+
+(Opcional) Placeholder de Secret TLS: dummy-tls-secret.yaml
+
+Si se quiere crear un Secret “dummy” en K8s, usar lo siguiente. No es el cert real del Gateway.
+
+Comandos de aplicación:
+
+kubectl apply -f dummy-tls-secret.yaml        # opcional
+kubectl apply -f ingress-agic-tls.yaml
+
+2) Mini dataset para RAG (ubicado en ./data/)
+
+Carpeta: data
+
+faq_llm.txt – Preguntas frecuentes del asistente LLM
+
+policy_llm.txt – Política de uso del asistente
+
+howto_llm.txt – Guía rápida de uso
+
+Colocar esta carpeta junto al notebook (Notebook_Azure_RAG_Indexing.ipynb) sino, se debe ajustar la variable DATA_DIR en el notebook a la ruta donde quede la carpeta.
