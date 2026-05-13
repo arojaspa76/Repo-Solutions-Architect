@@ -29,11 +29,12 @@ def embed(text: str):
     return r.json()["embedding"]
 
 def main():
-    chroma = chromadb.Client()
+    chroma = chromadb.PersistentClient(path=PERSIST_DIR)
     coll = chroma.get_or_create_collection("docs")
     files = glob.glob("./data/*.txt")
     if not files:
         print("No se encontraron archivos en ./data/. Agrega .txt")
+        
     for path in files:
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
             content = f.read()
@@ -49,7 +50,7 @@ def main():
                 documents=batch_docs,
                 embeddings=batch_embs,
                 ids=batch_ids,
-                metadatas=[{"file": os.path.basename(path)}]*len(batch_docs)
+                metadatas=[{"file": os.path.basename(path), "chunk": idx} for idx in range(len(batch_docs))]
             )
             print(f"Indexado {len(batch_docs)} chunks de {os.path.basename(path)}")
     print("Indexado OK (con chunking).")

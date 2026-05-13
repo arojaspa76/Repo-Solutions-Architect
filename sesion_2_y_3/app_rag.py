@@ -1,11 +1,14 @@
+import os
 from fastapi import FastAPI
-from fastapi.responses import ORJSONResponse
 from pydantic import BaseModel
 import requests, chromadb
 import logging
 
-app = FastAPI(default_response_class=ORJSONResponse)
-coll = chromadb.Client().get_or_create_collection("docs")
+PERSIST_DIR = os.path.join("data", ".chroma")
+os.makedirs(PERSIST_DIR, exist_ok=True)
+app = FastAPI(title="RAG API", description="API de ejemplo para RAG con FastAPI y ChromaDB", version="1.0.0")
+chroma = chromadb.PersistentClient(path=PERSIST_DIR)
+coll = chroma.get_or_create_collection("docs")
 logger = logging.getLogger("uvicorn.error")
 
 class Query(BaseModel):
@@ -25,12 +28,22 @@ def health():
 
 @app.post("/chat")
 def chat(q: Query):
+    #logger.info("collection_count=%s", coll.count())
     qvec = embed(q.q)
+    #logger.info("qvec=%s \n",qvec)
+
     hits = coll.query(query_embeddings=[qvec], n_results=5)
-    context = "\n".join(hits.get("documents", [[""]])[0])
-    prompt = f"Usa el contexto para responder con precisión:\n{context}\n\nPregunta: {q.q}"
+    #logger.info("hits=%s \n",hits)
     
-    logger.info("Prompt=%s \n",prompt)
+    docs = hits.get("documents") or [[]]
+    #logger.info("docs=%s \n",docs)
+    
+    first_docs = docs[0] if docs and isinstance(docs[0], list) else []
+    #logger.info("first_docs=%s \n",first_docs)
+
+    context = "\n".join(d for d in first_docs if isinstance(d, str))
+    prompt = f"Usa el contexto para responder con precisión:\n{context}\n\nPregunta: {q.q}"
+    #logger.info("Prompt=%s \n",prompt)
 
     r = requests.post("http://localhost:11434/api/generate", json={
         "model": "llama3",
@@ -39,5 +52,7 @@ def chat(q: Query):
     })
     r.encoding="utf-8"
     r.raise_for_status()
-    logger.debug("Respuesta=%s \n", r.json().get("response", "(sin respuesta)"))
-    return {"answer": r.json().get("response", "(sin respuesta)")}
+    payload = r.json()
+    answer = payload.get("response", "(sin respuesta)")
+    logger.debug("Respuesta=%s \n", answer)
+    return {"answer": answer}
