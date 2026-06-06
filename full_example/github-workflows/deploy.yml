@@ -1,0 +1,179 @@
+# .github/workflows/deploy.yml
+# ─────────────────────────────────────────────────────────────────────────────
+# Pipeline CI/CD: TechCorp RAG Orchestrator → Azure Container Registry → AKS
+#
+# Secrets de GitHub requeridos (Settings → Secrets → Actions):
+#   ACR_USERNAME          → Nombre de usuario del ACR (az acr credential show)
+#   ACR_PASSWORD          → Password del ACR
+#   AZURE_CREDENTIALS     → JSON de service principal (az ad sp create-for-rbac)
+#   KUBE_CONFIG           → Base64 del kubeconfig (cat ~/.kube/config | base64)
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: "Deploy TechCorp RAG Orchestrator"
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "rag-orchestrator/**"
+      - "kubernetes/**"
+      - ".github/workflows/deploy.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "rag-orchestrator/**"
+
+env:
+  ACR_REGISTRY:     acrtechcorp.azurecr.io
+  IMAGE_NAME:       rag-function
+  AKS_CLUSTER:      aks-techcorp
+  RESOURCE_GROUP:   rg-techcorp-llm
+  DEPLOYMENT_NAME:  rag-function
+
+jobs:
+  # ── Job 1: Tests y linting ─────────────────────────────────────────────────
+  test:
+    name: "Test & Lint"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rag-orchestrator
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt pytest ruff
+
+      - name: Linting con ruff
+        run: ruff check app/
+
+      - name: Ejecutar tests unitarios
+        run: pytest tests/ -v --tb=short
+        env:
+          # Variables mock para tests
+          AZURE_OPENAI_ENDPOINT: "https://mock.openai.azure.com/"
+          AZURE_OPENAI_KEY:      "mock-key"
+          AZURE_SEARCH_ENDPOINT: "https://mock.search.windows.net"
+          AZURE_SEARCH_KEY:      "mock-key"
+          COSMOS_ENDPOINT:       "https://mock.documents.azure.com/"
+          COSMOS_KEY:            "mock-key"
+
+  # ── Job 2: Build y push a ACR ─────────────────────────────────────────────
+  build:
+    name: "Build & Push Docker Image"
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Login a Azure Container Registry
+        uses: azure/docker-login@v2
+        with:
+          login-server: ${{ env.ACR_REGISTRY }}
+          username:     ${{ secrets.ACR_USERNAME }}
+          password:     ${{ secrets.ACR_PASSWORD }}
+
+      - name: Extraer metadata Docker (tag = SHA corto)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=,suffix=,format=short
+            type=raw,value=latest
+
+      - name: Build multi-platform y push
+        uses: docker/build-push-action@v5
+        with:
+          context:    rag-orchestrator/
+          push:       true
+          tags:       ${{ steps.meta.outputs.tags }}
+          labels:     ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-to:   type=inline
+
+      - name: Escaneo de seguridad con Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref:    ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          format:       table
+          exit-code:    1            # Fallar si hay vulnerabilidades CRITICAL
+          severity:     CRITICAL
+
+  # ── Job 3: Deploy a AKS ───────────────────────────────────────────────────
+  deploy:
+    name: "Deploy to AKS"
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: production
+      url: https://api-techcorp.azure-api.net
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Login a Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Obtener credenciales AKS
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ env.RESOURCE_GROUP }}
+          cluster-name:   ${{ env.AKS_CLUSTER }}
+
+      - name: Rolling update — nueva imagen
+        run: |
+          IMAGE="${{ env.ACR_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image_tag }}"
+          echo "Desplegando imagen: $IMAGE"
+          kubectl set image deployment/${{ env.DEPLOYMENT_NAME }} \
+            ${{ env.DEPLOYMENT_NAME }}=$IMAGE \
+            --record
+
+      - name: Esperar que el rollout complete
+        run: |
+          kubectl rollout status deployment/${{ env.DEPLOYMENT_NAME }} \
+            --timeout=5m
+
+      - name: Verificar pods en ejecución
+        run: |
+          kubectl get pods -l app=${{ env.DEPLOYMENT_NAME }} -o wide
+          kubectl get hpa ${{ env.DEPLOYMENT_NAME }}-hpa
+
+      - name: Health check post-deploy
+        run: |
+          # Esperar 30s y verificar el endpoint /health
+          sleep 30
+          LB_IP=$(kubectl get svc rag-function-svc \
+            -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          echo "Load Balancer IP: $LB_IP"
+          curl -f "http://$LB_IP/health" | python3 -m json.tool
+
+      - name: Rollback automático si health check falla
+        if: failure()
+        run: |
+          echo "Health check falló. Ejecutando rollback..."
+          kubectl rollout undo deployment/${{ env.DEPLOYMENT_NAME }}
+          kubectl rollout status deployment/${{ env.DEPLOYMENT_NAME }}
+
+      - name: Notificación de despliegue exitoso
+        if: success()
+        run: |
+          echo "✅ Despliegue exitoso de ${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image_tag }}"

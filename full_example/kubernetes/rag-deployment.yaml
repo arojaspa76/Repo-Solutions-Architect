@@ -1,0 +1,247 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# kubernetes/rag-deployment.yaml
+# Deployment completo del RAG Orchestrator en Azure Kubernetes Service
+# Incluye: Deployment, Service, HorizontalPodAutoscaler, ConfigMap, Secret
+# ─────────────────────────────────────────────────────────────────────────────
+
+---
+# ConfigMap: variables de entorno no sensibles
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-config
+  namespace: default
+  labels:
+    app: rag-function
+    env: production
+data:
+  AZURE_OPENAI_CHAT_MODEL:  "gpt-4o"
+  AZURE_OPENAI_EMBED_MODEL: "text-embedding-3-small"
+  AZURE_SEARCH_INDEX:       "knowledge-base"
+  COSMOS_DATABASE:          "techcorp-chatbot"
+  COSMOS_CONTAINER:         "conversations"
+  LOG_LEVEL:                "INFO"
+  ENVIRONMENT:              "production"
+  PORT:                     "8000"
+
+---
+# Secret: variables sensibles (en producción usar Azure Key Vault + CSI Driver)
+# Comando para crear el secret desde CLI:
+# kubectl create secret generic openai-secrets \
+#   --from-literal=AZURE_OPENAI_ENDPOINT=https://oai-techcorp.openai.azure.com/ \
+#   --from-literal=AZURE_OPENAI_KEY=<key> \
+#   --from-literal=AZURE_SEARCH_ENDPOINT=https://srch-techcorp.search.windows.net \
+#   --from-literal=AZURE_SEARCH_KEY=<key> \
+#   --from-literal=COSMOS_ENDPOINT=https://cosmos-techcorp.documents.azure.com:443/ \
+#   --from-literal=COSMOS_KEY=<key> \
+#   --from-literal=APPLICATIONINSIGHTS_CONNECTION_STRING=<conn-str>
+#
+# El Secret NO está en este archivo para no exponer credenciales en Git.
+
+---
+# Deployment: 2 réplicas iniciales con rolling update sin downtime
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-function
+  namespace: default
+  labels:
+    app: rag-function
+    version: "1.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: rag-function
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # Crear 1 pod nuevo antes de bajar el viejo
+      maxUnavailable: 0  # Cero downtime
+  template:
+    metadata:
+      labels:
+        app: rag-function
+        version: "1.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port:   "8000"
+        prometheus.io/path:   "/metrics"
+    spec:
+      # Tolerar que el pod se programe en nodos spot (Capítulo 4)
+      tolerations:
+        - key: "kubernetes.azure.com/scalesetpriority"
+          operator: "Equal"
+          value: "spot"
+          effect: "NoSchedule"
+      containers:
+        - name: rag-function
+          image: acrtechcorp.azurecr.io/rag-function:1.0   # ACR del Cap. 2
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+          # Variables no sensibles del ConfigMap
+          envFrom:
+            - configMapRef:
+                name: rag-config
+          # Variables sensibles del Secret
+          env:
+            - name: AZURE_OPENAI_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: openai-secrets
+                  key: AZURE_OPENAI_ENDPOINT
+            - name: AZURE_OPENAI_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-secrets
+                  key: AZURE_OPENAI_KEY
+            - name: AZURE_SEARCH_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: openai-secrets
+                  key: AZURE_SEARCH_ENDPOINT
+            - name: AZURE_SEARCH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-secrets
+                  key: AZURE_SEARCH_KEY
+            - name: COSMOS_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: openai-secrets
+                  key: COSMOS_ENDPOINT
+            - name: COSMOS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-secrets
+                  key: COSMOS_KEY
+            - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: openai-secrets
+                  key: APPLICATIONINSIGHTS_CONNECTION_STRING
+          # Límites de recursos (ajustar según pruebas del Cap. 5)
+          resources:
+            requests:
+              cpu:    "250m"
+              memory: "512Mi"
+            limits:
+              cpu:    "1000m"
+              memory: "1Gi"
+          # Liveness probe: reiniciar si la app cuelga
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds:       30
+            failureThreshold:    3
+          # Readiness probe: no enviar tráfico hasta que esté listo
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds:       10
+            failureThreshold:    3
+
+---
+# Service: expone el deployment internamente y vía Load Balancer
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-function-svc
+  namespace: default
+  annotations:
+    # Azure creará un Load Balancer con IP pública
+    service.beta.kubernetes.io/azure-load-balancer-resource-group: rg-techcorp-llm
+  labels:
+    app: rag-function
+spec:
+  type: LoadBalancer
+  selector:
+    app: rag-function
+  ports:
+    - name:       http
+      protocol:   TCP
+      port:       80
+      targetPort: 8000
+
+---
+# HorizontalPodAutoscaler: escala entre 2 y 10 réplicas (Cap. 5)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: rag-function-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: rag-function
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    # Escala si CPU supera 60%
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type:               Utilization
+          averageUtilization: 60
+    # Escala si memoria supera 70%
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type:               Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60    # Esperar 1 min antes de escalar arriba
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60             # Agregar máx 2 pods por minuto
+    scaleDown:
+      stabilizationWindowSeconds: 300   # Esperar 5 min antes de escalar abajo
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120            # Bajar máx 1 pod cada 2 minutos
+
+---
+# ScaledObject de KEDA: escala según mensajes en Azure Service Bus (Cap. 5)
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: rag-scaledobject
+  namespace: default
+spec:
+  scaleTargetRef:
+    name: rag-function
+  minReplicaCount: 1
+  maxReplicaCount: 20
+  cooldownPeriod:  120
+  triggers:
+    - type: azure-servicebus
+      metadata:
+        queueName:    tickets-queue
+        messageCount: "5"              # 1 pod por cada 5 mensajes en cola
+      authenticationRef:
+        name: keda-servicebus-auth
+
+---
+# TriggerAuthentication para KEDA + Service Bus
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: keda-servicebus-auth
+  namespace: default
+spec:
+  secretTargetRef:
+    - parameter: connection
+      name:      servicebus-secret
+      key:       CONNECTION_STRING
