@@ -4,3 +4,5 @@
 *.env
 /Sesion 2 y 3/.env
 #/proyectofinal
+
+provision_azure_old.ps1

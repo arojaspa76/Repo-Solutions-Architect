@@ -1,26 +1,22 @@
 # =============================================================================
 # scripts/provision_azure.ps1
-# Aprovisionamiento completo del curso — version PowerShell (Windows)
-#
-# Equivalente exacto de provision_azure.sh para estudiantes en Windows.
-# Cada seccion corresponde a un capitulo del curso.
-#
-# Requisitos:
-#   - Azure CLI instalado: https://aka.ms/installazurecliwindows
-#   - PowerShell 5.1+ o PowerShell 7+ (recomendado)
-#   - Sin permisos de administrador necesarios para az CLI
+# Aprovisionamiento completo del curso — PowerShell (Windows)
+# VERSION 3 — corrige errores encontrados en pruebas reales:
+#   - Spot node pool: REMOVIDO del aprovisionamiento inicial.
+#     Se crea manualmente en el Capitulo 4 como ejercicio de optimizacion.
+#     Razon: capacidad spot variable por region; no bloquea el resto del curso.
+#   - Redis: az redis retirado -> az redisenterprise con --public-network-access Enabled
+#   - Redis: requiere crear la database 'default' en paso separado
 #
 # Uso:
-#   .\provision_azure.ps1
-#
-# Si PowerShell bloquea la ejecucion por politica:
 #   Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+#   .\scripts\provision_azure.ps1
 # =============================================================================
 
 #Requires -Version 5.1
 $ErrorActionPreference = "Stop"
 
-# ── Funcion auxiliar: generar sufijo aleatorio de 6 hex (reemplaza openssl) ──
+# ── Helpers ───────────────────────────────────────────────────────────────────
 function New-HexSuffix {
     param([int]$Length = 6)
     $bytes = New-Object byte[] ($Length / 2)
@@ -28,95 +24,66 @@ function New-HexSuffix {
     return ($bytes | ForEach-Object { $_.ToString("x2") }) -join ""
 }
 
-# ── Funcion auxiliar: imprimir con color ─────────────────────────────────────
-function Write-Step {
-    param([string]$Emoji, [string]$Cap, [string]$Message)
-    Write-Host ""
-    Write-Host "$Emoji [$Cap] $Message" -ForegroundColor Cyan
-}
-
-function Write-OK   { param([string]$m) Write-Host "  OK  $m" -ForegroundColor Green }
+function Write-Step { param([string]$Cap,[string]$Msg) Write-Host "`n[$Cap] $Msg" -ForegroundColor Cyan }
+function Write-OK   { param([string]$m) Write-Host "  OK   $m" -ForegroundColor Green }
 function Write-Warn { param([string]$m) Write-Host "  WARN $m" -ForegroundColor Yellow }
 function Write-Info { param([string]$m) Write-Host "       $m" -ForegroundColor Gray }
 
 # ── Configuracion global ──────────────────────────────────────────────────────
-$RESOURCE_GROUP   = "rg-techcorp-llm"
-$LOCATION         = "eastus2"
-$ACR_NAME         = "acrtechcorp$(New-HexSuffix)"
-$AKS_CLUSTER      = "aks-techcorp"
-$SEARCH_NAME      = "srch-techcorp$(New-HexSuffix)"
-$COSMOS_NAME      = "cosmos-techcorp$(New-HexSuffix)"
-$FUNCTION_APP     = "fn-techcorp-summary"
-# Storage Account: solo letras minusculas y numeros, max 24 chars
-$STORAGE_ACCOUNT  = "stgtechcorp$(New-HexSuffix -Length 8)"
-$REDIS_NAME       = "redis-techcorp$(New-HexSuffix)"
+$RESOURCE_GROUP  = "rg-bsg-techcorp-llm"
+$LOCATION        = "centralus"
+$ACR_NAME        = "acrtechcorp$(New-HexSuffix)"
+$AKS_CLUSTER     = "aks-techcorp"
+$SEARCH_NAME     = "srch-techcorp$(New-HexSuffix)"
+$COSMOS_NAME     = "cosmos-techcorp$(New-HexSuffix)"
+$FUNCTION_APP    = "fn-techcorp-summary"
+$STORAGE_ACCOUNT = "stgtechcorp$(New-HexSuffix -Length 8)"
+$REDIS_NAME      = "redis-techcorp$(New-HexSuffix)"
 
-# Fechas para el presupuesto (equivale a $(date +%Y-%m-01) en bash)
-$TODAY        = Get-Date
-$START_DATE   = (Get-Date -Year $TODAY.Year -Month $TODAY.Month -Day 1).ToString("yyyy-MM-dd")
-$END_DATE     = (Get-Date -Year ($TODAY.Year + 1) -Month $TODAY.Month -Day 1).ToString("yyyy-MM-dd")
+$TODAY      = Get-Date
+$START_DATE = (Get-Date -Year $TODAY.Year -Month $TODAY.Month -Day 1).ToString("yyyy-MM-dd")
+$END_DATE   = (Get-Date -Year ($TODAY.Year + 1) -Month $TODAY.Month -Day 1).ToString("yyyy-MM-dd")
 
-# ── Banner ────────────────────────────────────────────────────────────────────
-Write-Host ""
-Write-Host "================================================================" -ForegroundColor Blue
-Write-Host "   TechCorp LLM - Aprovisionamiento Azure (PowerShell)"          -ForegroundColor Blue
-Write-Host "================================================================" -ForegroundColor Blue
-Write-Host "   Region: $LOCATION"
-Write-Host "   Grupo:  $RESOURCE_GROUP"
-Write-Host "   ACR:    $ACR_NAME"
-Write-Host "================================================================" -ForegroundColor Blue
-Write-Host ""
+# Banner
+Write-Host "`n================================================================" -ForegroundColor Blue
+Write-Host "   TechCorp LLM - Aprovisionamiento Azure (PowerShell v3)"         -ForegroundColor Blue
+Write-Host "================================================================"   -ForegroundColor Blue
+Write-Host "   Region : $LOCATION"
+Write-Host "   Grupo  : $RESOURCE_GROUP"
+Write-Host "================================================================`n" -ForegroundColor Blue
 
-# ── PRE-REQUISITO: Registrar namespaces (frecuente en cuentas nuevas) ─────────
-Write-Step ">" "PRE" "Registrando resource providers de Azure..."
-Write-Info "Esto evita el error MissingSubscriptionRegistration."
+# ── PRE: Registrar resource providers ────────────────────────────────────────
+Write-Step "PRE" "Registrando resource providers..."
+Write-Info "Esto evita el error MissingSubscriptionRegistration en cuentas nuevas."
 
-$namespaces = @(
-    "Microsoft.ContainerRegistry",
-    "Microsoft.ContainerService",
-    "Microsoft.Web",
-    "Microsoft.Search",
-    "Microsoft.DocumentDB",
-    "Microsoft.Cache",
-    "Microsoft.CognitiveServices",
-    "Microsoft.Cdn",
-    "Microsoft.Storage",
-    "Microsoft.Insights",
+@(
+    "Microsoft.ContainerRegistry", "Microsoft.ContainerService",
+    "Microsoft.Web", "Microsoft.Search", "Microsoft.DocumentDB",
+    "Microsoft.Cache", "Microsoft.CognitiveServices",
+    "Microsoft.Cdn", "Microsoft.Storage", "Microsoft.Insights",
     "Microsoft.OperationalInsights"
-)
-
-foreach ($ns in $namespaces) {
-    Write-Info "Registrando $ns ..."
-    az provider register --namespace $ns | Out-Null
+) | ForEach-Object {
+    az provider register --namespace $_ | Out-Null
+    Write-Info "Registrado: $_"
 }
 
-Write-Info "Esperando confirmacion de registro (30s)..."
+Write-Info "Esperando 30s para que propaguen los registros..."
 Start-Sleep -Seconds 30
+Write-OK "Providers registrados."
 
-# Verificar que esten en Registered o Registering
-foreach ($ns in $namespaces) {
-    $state = az provider show --namespace $ns --query "registrationState" -o tsv 2>$null
-    if ($state -eq "Registered" -or $state -eq "Registering") {
-        Write-OK "$ns -> $state"
-    } else {
-        Write-Warn "$ns -> $state (puede tardar unos minutos mas)"
-    }
-}
-
-# ── Verificar login en Azure ──────────────────────────────────────────────────
-Write-Step ">" "PRE" "Verificando sesion en Azure CLI..."
+# ── PRE: Verificar login ──────────────────────────────────────────────────────
+Write-Step "PRE" "Verificando sesion Azure CLI..."
 $account = az account show --query "user.name" -o tsv 2>$null
 if (-not $account) {
-    Write-Host "  No hay sesion activa. Iniciando az login..." -ForegroundColor Yellow
     az login --use-device-code
     $account = az account show --query "user.name" -o tsv
 }
 Write-OK "Conectado como: $account"
 
 # =============================================================================
-# CAPITULO 1 — Grupo de recursos base
+# CAPITULO 1 — Grupo de recursos
 # =============================================================================
-Write-Step "[CAP 1]" "CAP 1" "Creando grupo de recursos..."
+Write-Step "CAP 1" "Creando grupo de recursos '$RESOURCE_GROUP' en '$LOCATION'..."
 
 az group create `
     --name $RESOURCE_GROUP `
@@ -124,12 +91,12 @@ az group create `
     --tags proyecto=techcorp-llm curso=infraestructura-llms `
     --output table
 
-Write-OK "Grupo de recursos '$RESOURCE_GROUP' listo."
+Write-OK "Grupo de recursos listo."
 
 # =============================================================================
-# CAPITULO 2 — Azure Container Registry y AKS
+# CAPITULO 2 — ACR y AKS
 # =============================================================================
-Write-Step "[CAP 2]" "CAP 2" "Creando Azure Container Registry..."
+Write-Step "CAP 2" "Creando Azure Container Registry '$ACR_NAME'..."
 
 az acr create `
     --resource-group $RESOURCE_GROUP `
@@ -138,11 +105,11 @@ az acr create `
     --admin-enabled true `
     --output table
 
-Write-OK "ACR '$ACR_NAME' creado."
+Write-OK "ACR listo: $ACR_NAME.azurecr.io"
 
 # ── AKS ───────────────────────────────────────────────────────────────────────
-Write-Step "[CAP 2]" "CAP 2" "Creando cluster AKS (puede tardar 5-8 minutos)..."
-Write-Info "VM size: Standard_D4s_v3 | Nodos: 2 | Autoscaler: 2-8"
+Write-Step "CAP 2" "Creando cluster AKS '$AKS_CLUSTER' (5-8 min)..."
+Write-Info "Nodos: 2 x Standard_D4s_v3 | Autoscaler: 2-8"
 
 az aks create `
     --resource-group $RESOURCE_GROUP `
@@ -159,37 +126,32 @@ az aks create `
     --tags proyecto=techcorp-llm `
     --output table
 
-Write-OK "Cluster AKS '$AKS_CLUSTER' creado."
+Write-OK "Cluster AKS listo."
 
-# ── Configurar kubectl ────────────────────────────────────────────────────────
 Write-Info "Configurando kubectl..."
 az aks get-credentials `
     --resource-group $RESOURCE_GROUP `
     --name $AKS_CLUSTER `
     --overwrite-existing
+Write-OK "kubectl configurado. Verifica con: kubectl get nodes"
 
-Write-OK "kubectl configurado. Prueba: kubectl get nodes"
-
-# ── Spot node pool ────────────────────────────────────────────────────────────
-Write-Step "[CAP 2]" "CAP 2" "Agregando spot node pool (cargas batch, Cap. 4)..."
-
-az aks nodepool add `
-    --resource-group $RESOURCE_GROUP `
-    --cluster-name $AKS_CLUSTER `
-    --name spotpool `
-    --priority Spot `
-    --eviction-policy Delete `
-    --spot-max-price -1 `
-    --node-count 2 `
-    --node-vm-size Standard_D4s_v3 `
-    --output table
-
-Write-OK "Spot node pool creado."
+# ── NOTA spot pool ────────────────────────────────────────────────────────────
+Write-Host ""
+Write-Host "  NOTA CAP 4 — Spot Node Pool" -ForegroundColor Yellow
+Write-Host "  El spot pool se crea manualmente desde el portal Azure en el Capitulo 4." -ForegroundColor Yellow
+Write-Host "  La disponibilidad spot varia por region y tipo de suscripcion." -ForegroundColor Yellow
+Write-Host "  Configuracion validada para centralus:" -ForegroundColor Yellow
+Write-Host "    Portal: AKS -> Node pools -> Add -> Virtual Machine Scale Set node pool" -ForegroundColor Gray
+Write-Host "    Azure Spot instances: Enabled" -ForegroundColor Gray
+Write-Host "    Eviction type: Capacity only" -ForegroundColor Gray
+Write-Host "    Eviction policy: Delete" -ForegroundColor Gray
+Write-Host "    Node size: Standard_D2ls_v5 (eviction rate 0-5%, USD 0.01774/hr)" -ForegroundColor Gray
+Write-Host "    Availability zones: None | Mode: User | OS: Ubuntu | Count: 1" -ForegroundColor Gray
 
 # =============================================================================
-# CAPITULO 3 — Azure Functions (serverless)
+# CAPITULO 3 — Azure Functions
 # =============================================================================
-Write-Step "[CAP 3]" "CAP 3" "Creando Storage Account para Azure Functions..."
+Write-Step "CAP 3" "Creando Storage Account '$STORAGE_ACCOUNT'..."
 
 az storage account create `
     --name $STORAGE_ACCOUNT `
@@ -197,9 +159,9 @@ az storage account create `
     --sku Standard_LRS `
     --output table
 
-Write-OK "Storage Account '$STORAGE_ACCOUNT' creado."
+Write-OK "Storage Account listo."
 
-Write-Step "[CAP 3]" "CAP 3" "Creando Function App (Python 3.11, plan consumo)..."
+Write-Step "CAP 3" "Creando Function App '$FUNCTION_APP' (Python 3.11, plan consumo)..."
 
 az functionapp create `
     --resource-group $RESOURCE_GROUP `
@@ -207,34 +169,52 @@ az functionapp create `
     --runtime python `
     --runtime-version 3.11 `
     --functions-version 4 `
+    --os-type Linux `
     --name $FUNCTION_APP `
     --storage-account $STORAGE_ACCOUNT `
     --output table
 
-Write-OK "Function App '$FUNCTION_APP' creado."
+Write-OK "Function App '$FUNCTION_APP' listo."
 
 # =============================================================================
-# CAPITULO 4 — Optimizacion de costos: Redis + Presupuesto
+# CAPITULO 4 — Azure Managed Redis
+# FIX v3: az redis retirado -> az redisenterprise
+#         Requiere --public-network-access Enabled (API 2025-07-01)
+#         Requiere crear la database 'default' en paso separado
 # =============================================================================
-Write-Step "[CAP 4]" "CAP 4" "Creando Azure Cache for Redis C0 (~10-15 min)..."
-Write-Info "Tier Basic C0 = suficiente para cache semantica en el curso."
+Write-Step "CAP 4" "Instalando extension redisenterprise en Azure CLI..."
+az extension add --name redisenterprise --upgrade --yes 2>$null
+Write-OK "Extension redisenterprise lista."
 
-az redis create `
+Write-Step "CAP 4" "Creando Azure Managed Redis '$REDIS_NAME' (Balanced_B0, ~10 min)..."
+Write-Info "FIX: az redis fue retirado. Usamos az redisenterprise (Azure Managed Redis)."
+Write-Info "FIX: --public-network-access Enabled requerido desde API 2025-07-01."
+
+az redisenterprise create `
     --name $REDIS_NAME `
     --resource-group $RESOURCE_GROUP `
     --location $LOCATION `
-    --sku Basic `
-    --vm-size c0 `
+    --sku Balanced_B0 `
+    --public-network-access Enabled `
     --output table
 
-Write-OK "Redis '$REDIS_NAME' creado."
+Write-OK "Cluster Redis creado. Creando database 'default'..."
 
-# ── Presupuesto (puede fallar si la cuenta no tiene permisos de billing) ──────
-Write-Step "[CAP 4]" "CAP 4" "Configurando presupuesto con alerta al 80%..."
+az redisenterprise database create `
+    --cluster-name $REDIS_NAME `
+    --resource-group $RESOURCE_GROUP `
+    --client-protocol Encrypted `
+    --eviction-policy VolatileLRU `
+    --output table
+
+Write-OK "Azure Managed Redis '$REDIS_NAME' listo."
+
+# ── Presupuesto ───────────────────────────────────────────────────────────────
+Write-Step "CAP 4" "Configurando presupuesto USD 100/mes con alerta al 80%..."
 try {
     az consumption budget create `
         --budget-name "budget-techcorp-llm" `
-        --amount 2000 `
+        --amount 100 `
         --time-grain Monthly `
         --start-date $START_DATE `
         --end-date $END_DATE `
@@ -242,17 +222,16 @@ try {
         --threshold 80 `
         --contact-emails "arquitecto@techcorp.com" `
         --output table 2>$null
-
-    Write-OK "Presupuesto configurado: USD 2,000/mes, alerta al 80%."
+    Write-OK "Presupuesto configurado."
 } catch {
     Write-Warn "El presupuesto requiere permisos de billing."
-    Write-Info "Configurarlo manualmente: Portal Azure -> Cost Management -> Budgets."
+    Write-Info "Configurar manualmente: Portal Azure -> Cost Management -> Budgets -> Add."
 }
 
 # =============================================================================
-# CAPITULO 5 — Azure Front Door (HA y distribucion geografica)
+# CAPITULO 5 — Azure Front Door
 # =============================================================================
-Write-Step "[CAP 5]" "CAP 5" "Creando perfil Azure Front Door..."
+Write-Step "CAP 5" "Creando perfil Azure Front Door 'afd-techcorp'..."
 
 az afd profile create `
     --profile-name "afd-techcorp" `
@@ -260,13 +239,12 @@ az afd profile create `
     --sku Standard_AzureFrontDoor `
     --output table
 
-Write-OK "Azure Front Door 'afd-techcorp' creado."
+Write-OK "Azure Front Door listo."
 
 # =============================================================================
 # CAPITULO 6 — Azure AI Search y Cosmos DB
 # =============================================================================
-Write-Step "[CAP 6]" "CAP 6" "Creando Azure AI Search Standard S1..."
-Write-Info "Nombre: $SEARCH_NAME"
+Write-Step "CAP 6" "Creando Azure AI Search '$SEARCH_NAME' (Standard S1)..."
 
 az search service create `
     --name $SEARCH_NAME `
@@ -276,10 +254,9 @@ az search service create `
     --replica-count 1 `
     --output table
 
-Write-OK "Azure AI Search '$SEARCH_NAME' creado."
+Write-OK "Azure AI Search listo."
 
-Write-Step "[CAP 6]" "CAP 6" "Creando Azure Cosmos DB (modo serverless)..."
-Write-Info "Nombre: $COSMOS_NAME"
+Write-Step "CAP 6" "Creando Azure Cosmos DB '$COSMOS_NAME' (serverless)..."
 
 az cosmosdb create `
     --name $COSMOS_NAME `
@@ -289,16 +266,12 @@ az cosmosdb create `
     --default-consistency-level Session `
     --output table
 
-Write-OK "Cosmos DB '$COSMOS_NAME' creado."
-
-Write-Info "Creando base de datos 'techcorp-chatbot'..."
 az cosmosdb sql database create `
     --account-name $COSMOS_NAME `
     --resource-group $RESOURCE_GROUP `
     --name "techcorp-chatbot" `
     --output table
 
-Write-Info "Creando contenedor 'conversations' (partition key: /session_id)..."
 az cosmosdb sql container create `
     --account-name $COSMOS_NAME `
     --resource-group $RESOURCE_GROUP `
@@ -307,118 +280,118 @@ az cosmosdb sql container create `
     --partition-key-path "/session_id" `
     --output table
 
-Write-OK "Cosmos DB configurado con DB y contenedor."
+Write-OK "Cosmos DB listo (DB + contenedor conversations)."
 
 # =============================================================================
-# RESUMEN FINAL — mostrar todos los recursos y valores para el .env
+# RESUMEN FINAL — obtener claves y generar .env
 # =============================================================================
-Write-Host ""
-Write-Host "================================================================" -ForegroundColor Green
+Write-Host "`n================================================================" -ForegroundColor Green
 Write-Host "   APROVISIONAMIENTO COMPLETADO" -ForegroundColor Green
 Write-Host "================================================================" -ForegroundColor Green
-Write-Host ""
 
-Write-Host "Recursos creados en '$RESOURCE_GROUP':" -ForegroundColor Cyan
+Write-Host "`nRecursos en '$RESOURCE_GROUP':" -ForegroundColor Cyan
 az resource list `
     --resource-group $RESOURCE_GROUP `
     --query "[].{Nombre:name, Tipo:type}" `
     --output table
 
-# ── Obtener claves y endpoints para el .env ───────────────────────────────────
-Write-Host ""
-Write-Host "================================================================" -ForegroundColor Yellow
-Write-Host "   VALORES PARA EL ARCHIVO .env" -ForegroundColor Yellow
-Write-Host "================================================================" -ForegroundColor Yellow
-Write-Host ""
+# Obtener claves
+Write-Host "`n[Leyendo claves de los servicios...]" -ForegroundColor Gray
 
-# ACR
-$ACR_USER = az acr credential show --name $ACR_NAME --query "username" -o tsv 2>$null
-$ACR_PASS = az acr credential show --name $ACR_NAME --query "passwords[0].value" -o tsv 2>$null
-Write-Host "# Docker / ACR" -ForegroundColor Gray
-Write-Host "ACR_REGISTRY=$ACR_NAME.azurecr.io"
-Write-Host "ACR_USERNAME=$ACR_USER"
-Write-Host "ACR_PASSWORD=$ACR_PASS"
-Write-Host ""
+$ACR_USER   = az acr credential show --name $ACR_NAME `
+                  --query "username" -o tsv 2>$null
+$ACR_PASS   = az acr credential show --name $ACR_NAME `
+                  --query "passwords[0].value" -o tsv 2>$null
 
-# AI Search
-$SEARCH_KEY = az search admin-key show --service-name $SEARCH_NAME --resource-group $RESOURCE_GROUP --query "primaryKey" -o tsv 2>$null
-Write-Host "# Azure AI Search" -ForegroundColor Gray
-Write-Host "AZURE_SEARCH_ENDPOINT=https://$SEARCH_NAME.search.windows.net"
-Write-Host "AZURE_SEARCH_KEY=$SEARCH_KEY"
-Write-Host "AZURE_SEARCH_INDEX=knowledge-base"
-Write-Host ""
+$SEARCH_KEY = az search admin-key show `
+                  --service-name $SEARCH_NAME `
+                  --resource-group $RESOURCE_GROUP `
+                  --query "primaryKey" -o tsv 2>$null
 
-# Cosmos DB
-$COSMOS_KEY = az cosmosdb keys list --name $COSMOS_NAME --resource-group $RESOURCE_GROUP --query "primaryMasterKey" -o tsv 2>$null
-Write-Host "# Azure Cosmos DB" -ForegroundColor Gray
-Write-Host "COSMOS_ENDPOINT=https://$COSMOS_NAME.documents.azure.com:443/"
-Write-Host "COSMOS_KEY=$COSMOS_KEY"
-Write-Host "COSMOS_DATABASE=techcorp-chatbot"
-Write-Host "COSMOS_CONTAINER=conversations"
-Write-Host ""
+$COSMOS_KEY = az cosmosdb keys list `
+                  --name $COSMOS_NAME `
+                  --resource-group $RESOURCE_GROUP `
+                  --query "primaryMasterKey" -o tsv 2>$null
 
-# Redis
-$REDIS_KEY = az redis list-keys --name $REDIS_NAME --resource-group $RESOURCE_GROUP --query "primaryKey" -o tsv 2>$null
-Write-Host "# Azure Cache for Redis" -ForegroundColor Gray
-Write-Host "REDIS_CONNECTION_STRING=$REDIS_NAME.redis.cache.windows.net:6380,password=$REDIS_KEY,ssl=True"
-Write-Host ""
+# Redis Managed: endpoint formato <nombre>.<region>.redis.azure.net:10000
+$REDIS_ENDPOINT = "$REDIS_NAME.$LOCATION.redis.azure.net"
+try {
+    $REDIS_KEY = az redisenterprise database list-keys `
+                     --cluster-name $REDIS_NAME `
+                     --resource-group $RESOURCE_GROUP `
+                     --query "primaryKey" -o tsv 2>$null
+} catch {
+    $REDIS_KEY = "<obtener desde portal: Redis -> Authentication -> Access keys>"
+}
 
-# Azure OpenAI (pendiente de crear manualmente — requiere aprobacion de Microsoft)
-Write-Host "# Azure OpenAI Service (crear manualmente en el portal)" -ForegroundColor Gray
-Write-Host "AZURE_OPENAI_ENDPOINT=https://<tu-recurso>.openai.azure.com/"
-Write-Host "AZURE_OPENAI_KEY=<completar-desde-portal>"
-Write-Host "AZURE_OPENAI_CHAT_MODEL=gpt-4o"
-Write-Host "AZURE_OPENAI_EMBED_MODEL=text-embedding-3-small"
-Write-Host ""
-
-Write-Host "================================================================" -ForegroundColor Yellow
-Write-Host "   NOTA: Azure OpenAI requiere aprobacion manual de Microsoft."  -ForegroundColor Yellow
-Write-Host "   Solicitar en: https://aka.ms/oai/access"                       -ForegroundColor Yellow
-Write-Host "================================================================" -ForegroundColor Yellow
-Write-Host ""
-
-# ── Guardar resumen en archivo ────────────────────────────────────────────────
+# Construir bloque .env
 $envContent = @"
 # ─────────────────────────────────────────────────────────────────
-# Generado automaticamente por provision_azure.ps1
-# Copiar este bloque al archivo rag-orchestrator/.env
+# Generado por provision_azure.ps1 v3 — $(Get-Date -Format "yyyy-MM-dd HH:mm")
+# Copiar al archivo: rag-orchestrator/.env
+# NUNCA subir este archivo a Git (.gitignore ya lo excluye)
 # ─────────────────────────────────────────────────────────────────
 
+# Docker / Azure Container Registry
 ACR_REGISTRY=$ACR_NAME.azurecr.io
 ACR_USERNAME=$ACR_USER
 ACR_PASSWORD=$ACR_PASS
 
+# Azure AI Search
 AZURE_SEARCH_ENDPOINT=https://$SEARCH_NAME.search.windows.net
 AZURE_SEARCH_KEY=$SEARCH_KEY
 AZURE_SEARCH_INDEX=knowledge-base
 
+# Azure Cosmos DB
 COSMOS_ENDPOINT=https://$COSMOS_NAME.documents.azure.com:443/
 COSMOS_KEY=$COSMOS_KEY
 COSMOS_DATABASE=techcorp-chatbot
 COSMOS_CONTAINER=conversations
 
-REDIS_CONNECTION_STRING=$REDIS_NAME.redis.cache.windows.net:6380,password=$REDIS_KEY,ssl=True
+# Azure Managed Redis (puerto 10000, TLS obligatorio)
+REDIS_CONNECTION_STRING=${REDIS_ENDPOINT}:10000,password=$REDIS_KEY,ssl=True,abortConnect=False
 
+# Azure OpenAI Service (crear manualmente en portal — requiere aprobacion Microsoft)
+# Solicitar acceso en: https://aka.ms/oai/access
 AZURE_OPENAI_ENDPOINT=https://<tu-recurso>.openai.azure.com/
 AZURE_OPENAI_KEY=<completar-desde-portal>
 AZURE_OPENAI_CHAT_MODEL=gpt-4o
 AZURE_OPENAI_EMBED_MODEL=text-embedding-3-small
 
+# Azure Monitor / Application Insights (crear en portal)
 APPLICATIONINSIGHTS_CONNECTION_STRING=<completar-desde-portal>
+
+# Configuracion de la aplicacion
+PORT=8000
+LOG_LEVEL=INFO
+ENVIRONMENT=production
 "@
 
+# Mostrar en consola
+Write-Host "`n================================================================" -ForegroundColor Yellow
+Write-Host "   VALORES PARA rag-orchestrator/.env" -ForegroundColor Yellow
+Write-Host "================================================================" -ForegroundColor Yellow
+Write-Host $envContent
+
+# Guardar en archivo junto al script
 $envFile = Join-Path $PSScriptRoot "env_generado.txt"
-$envContent | Out-File -FilePath $envFile -Encoding utf8
-Write-Host "Valores guardados en: $envFile" -ForegroundColor Green
-Write-Host ""
+$envContent | Out-File -FilePath $envFile -Encoding utf8 -Force
+Write-Host "`nArchivo guardado en: $envFile" -ForegroundColor Green
 
 # ── Instrucciones finales ─────────────────────────────────────────────────────
-Write-Host "PROXIMOS PASOS:" -ForegroundColor Cyan
-Write-Host "  1. Copiar el contenido de env_generado.txt al archivo rag-orchestrator/.env"
-Write-Host "  2. Completar AZURE_OPENAI_ENDPOINT y AZURE_OPENAI_KEY desde el portal"
-Write-Host "  3. Ejecutar: kubectl get nodes   (verificar el cluster AKS)"
-Write-Host "  4. Ejecutar: az acr list --output table   (verificar el ACR)"
+Write-Host "`n================================================================" -ForegroundColor Cyan
+Write-Host "   PROXIMOS PASOS" -ForegroundColor Cyan
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host "  1. Copiar env_generado.txt -> rag-orchestrator/.env"
+Write-Host "  2. Completar AZURE_OPENAI_* y APPLICATIONINSIGHTS_* desde el portal"
+Write-Host "  3. kubectl get nodes              # verificar nodos AKS"
+Write-Host "  4. az acr list --output table     # verificar ACR"
 Write-Host ""
-Write-Host "Para ELIMINAR todos los recursos al terminar el curso:" -ForegroundColor Red
+Write-Host "  CAP 4 — Spot pool: crear desde el portal Azure (la disponibilidad spot" -ForegroundColor Yellow
+Write-Host "          varia por region — CLI puede fallar con SkuNotAvailable)." -ForegroundColor Yellow
+Write-Host "    AKS -> Node pools -> Add -> Virtual Machine Scale Set node pool" -ForegroundColor Gray
+Write-Host "    Spot: Enabled | Eviction: Delete | Size: Standard_D2ls_v5 | Mode: User" -ForegroundColor Gray
+Write-Host ""
+Write-Host "  Para ELIMINAR todos los recursos al terminar el curso:" -ForegroundColor Red
 Write-Host "  az group delete --name $RESOURCE_GROUP --yes --no-wait"
 Write-Host ""
