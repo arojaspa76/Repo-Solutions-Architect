@@ -6,3 +6,7 @@
 #/proyectofinal
 
 provision_azure_old.ps1
+env_generado.txt
+scripts/env_generado.txt
+*.env
+.env
