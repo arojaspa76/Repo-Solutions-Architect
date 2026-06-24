@@ -1,76 +1,79 @@
-# Guía Paso a Paso – Despliegue de una Solución LLM en Microsoft Azure
+# Step-by-Step Guide – LLM Solution Deployment on Microsoft Azure
 ## AKS + ACR + Azure OpenAI + Azure AI Search
 
-**Formato:** Word (docx) | **Nivel:** Arquitecto / Maestría
+**Format:** Markdown | **Level:** Architect / Master's
 
-Esta guía detalla las acciones exactas en Portal y CLI, con explicaciones, código y buenas prácticas.
+This guide details the exact actions in the Portal and CLI, with explanations, code, and best practices.
 
 ---
 
 ## 0) Pre-flight Checklist
 
-1. Verifica suscripción y permisos (`Owner` / `Contributor`) en Azure Portal.
-2. Confirma acceso a Azure OpenAI en una región disponible (East US, Sweden Central, etc.).
-3. Herramientas locales: Azure CLI (`>=2.60`), `kubectl`, Docker, Git.
-4. Inicia sesión en CLI:
+1. Verify subscription and permissions (`Owner` / `Contributor`) in Azure Portal.
+2. Confirm access to Azure OpenAI in an available region (Central US, Sweden Central, etc.).
+3. Local tools: Azure CLI (`>=2.60`), `kubectl`, Docker, Git.
+4. Sign in via CLI:
 
-```bash
+```powershell
 az login
 az account set --subscription "<SUBSCRIPTION_ID_OR_NAME>"
 ```
 
 ---
 
-## 1) Crear Resource Group y Red (VNet + Subnets)
+## 1) Create Resource Group and Network (VNet + Subnets)
 
-**Portal:** Resource groups → Create → Name: `llm-rg` | Region: `East US`
+**Portal:** Resource groups → Create → Name: `llm-rg` | Region: `Central US`
 
-**CLI equivalente:**
+**CLI equivalent:**
 
-```bash
-az group create -n llm-rg -l eastus
+```powershell
+az group create -n llm-rg -l centralus
 
-az network vnet create \
-  -g llm-rg -n llm-vnet \
-  --address-prefixes 10.10.0.0/16 \
-  --subnet-name aks-subnet \
+az network vnet create `
+  -g llm-rg -n llm-vnet `
+  --address-prefixes 10.10.0.0/16 `
+  --subnet-name aks-subnet `
   --subnet-prefix 10.10.1.0/24
 
-az network vnet subnet create \
-  -g llm-rg --vnet-name llm-vnet \
-  -n pe-subnet \
+az network vnet subnet create `
+  -g llm-rg --vnet-name llm-vnet `
+  -n pe-subnet `
   --address-prefix 10.10.2.0/24
 ```
 
 ---
 
-## 2) Key Vault y Managed Identity (RBAC)
+## 2) Key Vault and Managed Identity (RBAC)
 
-Crear Key Vault y una Managed Identity para evitar exponer llaves:
+Create a Key Vault and a Managed Identity to avoid exposing keys:
 
-```bash
-az keyvault create \
-  -g llm-rg -n llm-kv-001 -l eastus \
+```powershell
+az keyvault create `
+  -g llm-rg -n llm-kv-001 -l centralus `
   --enable-rbac-authorization true
 
 az identity create -g llm-rg -n llm-mi-aks
 
-# Conceder rol para leer secretos
-az role assignment create \
-  --assignee $(az identity show -g llm-rg -n llm-mi-aks --query principalId -o tsv) \
-  --role "Key Vault Secrets User" \
-  --scope $(az keyvault show -g llm-rg -n llm-kv-001 --query id -o tsv)
+# Grant role to read secrets
+$principalId = az identity show -g llm-rg -n llm-mi-aks --query principalId -o tsv
+$kvScope     = az keyvault show -g llm-rg -n llm-kv-001 --query id -o tsv
+
+az role assignment create `
+  --assignee $principalId `
+  --role "Key Vault Secrets User" `
+  --scope $kvScope
 ```
 
 ---
 
 ## 3) Azure AI Search (Vector Search)
 
-**Portal:** Create a resource → Azure AI Search → Name: `llm-search-001` → Pricing tier: `Standard` o superior.
+**Portal:** Create a resource → Azure AI Search → Name: `llm-search-001` → Pricing tier: `Standard` or higher.
 
-**Networking:** Private endpoint (recomendado) → Subnet: `pe-subnet` (opcional).
+**Networking:** Private endpoint (recommended) → Subnet: `pe-subnet` (optional).
 
-**Crear índice vectorial** (ejemplo JSON, 1536 dimensiones):
+**Create vector index** (JSON example, 1536 dimensions):
 
 ```json
 {
@@ -96,28 +99,28 @@ az role assignment create \
 
 ---
 
-## 4) Azure OpenAI – Crear Recurso y Deployments
+## 4) Azure OpenAI – Create Resource and Deployments
 
-**Portal:** Create a resource → Azure OpenAI → Name: `llm-aoai-001` → Region (igual a los demás).
+**Portal:** Create a resource → Azure OpenAI → Name: `llm-aoai-001` → Region (same as others).
 
-**Networking:** Private endpoint (opcional recomendado).
+**Networking:** Private endpoint (optional, recommended).
 
-Abrir **Azure AI Studio** → Deployments → Create new deployment:
+Open **Azure AI Studio** → Deployments → Create new deployment:
 
-| Propósito   | Modelo                  |
+| Purpose     | Model                   |
 |-------------|-------------------------|
 | Chat        | `gpt-4o`                |
 | Embeddings  | `text-embedding-3-small`|
 
-> Guarda el **Endpoint URL** y los **Deployment Name(s)** para usarlos más adelante.
+> Save the **Endpoint URL** and **Deployment Name(s)** to use later.
 
 ---
 
-## 5) Azure Container Registry (ACR) y Push de Imagen
+## 5) Azure Container Registry (ACR) and Image Push
 
-Crear registro, construir y subir imagen Docker:
+Create registry, build and push Docker image:
 
-```bash
+```powershell
 az acr create -g llm-rg -n llmacr001 --sku Basic
 az acr login -n llmacr001
 ```
@@ -133,11 +136,11 @@ EXPOSE 8080
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
 ```
 
-**`app.py`** (FastAPI – demo simplificado):
+**`app.py`** (FastAPI – simplified demo):
 
-> ⚠️ **Correcciones aplicadas:**
-> - `SearchClient` requiere `AzureKeyCredential`, no un string directo.
-> - La API de búsqueda vectorial usa `VectorizedQuery` (SDK `>=11.4`), no el dict `vector={}` obsoleto.
+> ⚠️ **Corrections applied:**
+> - `SearchClient` requires `AzureKeyCredential`, not a plain string.
+> - The vector search API uses `VectorizedQuery` (SDK `>=11.4`), not the obsolete `vector={}` dict.
 
 ```python
 import os
@@ -166,7 +169,7 @@ aoai_client = AzureOpenAI(
 search_client = SearchClient(
     endpoint=SEARCH_ENDPOINT,
     index_name=SEARCH_INDEX,
-    credential=AzureKeyCredential(SEARCH_KEY)   # ← requiere AzureKeyCredential
+    credential=AzureKeyCredential(SEARCH_KEY)   # ← requires AzureKeyCredential
 )
 
 class Query(BaseModel):
@@ -178,7 +181,7 @@ def health():
 
 @app.post("/chat")
 def chat(q: Query):
-    # En producción: genera el embedding de q.q con el deployment de embeddings
+    # In production: generate the embedding of q.q with the embeddings deployment
     dummy_vector = [0.0] * 1536
     vector_query = VectorizedQuery(
         vector=dummy_vector,
@@ -190,34 +193,34 @@ def chat(q: Query):
 
     resp = aoai_client.chat.completions.create(
         model=AOAI_DEPLOYMENT,
-        messages=[{"role": "user", "content": f"Contexto:\n{context}\nPregunta:\n{q.q}"}]
+        messages=[{"role": "user", "content": f"Context:\n{context}\nQuestion:\n{q.q}"}]
     )
     return {"answer": resp.choices[0].message.content}
 ```
 
 **Build & Push:**
 
-```bash
+```powershell
 docker build -t llmacr001.azurecr.io/llmapi:latest .
 docker push llmacr001.azurecr.io/llmapi:latest
 ```
 
 ---
 
-## 6) AKS – Crear Clúster y Conectar ACR
+## 6) AKS – Create Cluster and Attach ACR
 
-> ⚠️ **Corrección aplicada:** Se agrega `--assign-identity` para asociar la Managed Identity creada en el paso 2 al clúster desde el inicio.
+> ⚠️ **Correction applied:** `--assign-identity` is added to associate the Managed Identity created in step 2 to the cluster from the start.
 
-```bash
-MI_ID=$(az identity show -g llm-rg -n llm-mi-aks --query id -o tsv)
+```powershell
+$MI_ID = az identity show -g llm-rg -n llm-mi-aks --query id -o tsv
 
-az aks create \
-  -g llm-rg -n llm-aks \
-  --node-count 2 \
-  --enable-addons monitoring \
-  --attach-acr llmacr001 \
-  --network-plugin azure \
-  --assign-identity "$MI_ID"
+az aks create `
+  -g llm-rg -n llm-aks `
+  --node-count 2 `
+  --enable-addons monitoring `
+  --attach-acr llmacr001 `
+  --network-plugin azure `
+  --assign-identity $MI_ID
 
 az aks get-credentials -g llm-rg -n llm-aks
 kubectl get nodes
@@ -225,24 +228,24 @@ kubectl get nodes
 
 ---
 
-## 7) Secretos (Kubernetes Secrets – atajo inicial)
+## 7) Secrets (Kubernetes Secrets – quick start)
 
-> Para producción usa Key Vault CSI (ver Apéndice A). Aquí un atajo inicial:
+> For production use Key Vault CSI (see Appendix A). Here is a quick initial approach:
 
-```bash
-kubectl create secret generic app-secrets \
-  --from-literal=AOAI_ENDPOINT="https://<tu-aoai>.openai.azure.com/" \
-  --from-literal=AOAI_DEPLOYMENT="gpt4o-deploy" \
-  --from-literal=AOAI_KEY="<tu_api_key>" \
-  --from-literal=SEARCH_ENDPOINT="https://llm-search-001.search.windows.net" \
-  --from-literal=SEARCH_KEY="<tu_search_key>"
+```powershell
+kubectl create secret generic app-secrets `
+  --from-literal=AOAI_ENDPOINT="https://<your-aoai>.openai.azure.com/" `
+  --from-literal=AOAI_DEPLOYMENT="gpt4o-deploy" `
+  --from-literal=AOAI_KEY="<your_api_key>" `
+  --from-literal=SEARCH_ENDPOINT="https://llm-search-001.search.windows.net" `
+  --from-literal=SEARCH_KEY="<your_search_key>"
 ```
 
 ---
 
-## 8) Despliegue (Deployment + Service)
+## 8) Deployment (Deployment + Service)
 
-Crea `deployment.yaml` con 2 réplicas y expone un Service interno:
+Create `deployment.yaml` with 2 replicas and expose an internal Service:
 
 ```yaml
 apiVersion: apps/v1
@@ -277,21 +280,21 @@ spec:
   type: ClusterIP
 ```
 
-```bash
+```powershell
 kubectl apply -f deployment.yaml
 kubectl get pods
 ```
 
 ---
 
-## 9) Ingress (NGINX) – Exponer Públicamente
+## 9) Ingress (NGINX) – Expose Publicly
 
-Instala Ingress NGINX con Helm y crea `ingress.yaml`:
+Install NGINX Ingress with Helm and create `ingress.yaml`:
 
-```bash
+```powershell
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 helm repo update
-helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx `
   --namespace ingress-nginx --create-namespace
 ```
 
@@ -317,63 +320,65 @@ spec:
               number: 80
 ```
 
-```bash
+```powershell
 kubectl apply -f ingress.yaml
 kubectl get svc -n ingress-nginx
 ```
 
 ---
 
-## 10) Private Endpoints (Opcional Recomendado)
+## 10) Private Endpoints (Optional – Recommended)
 
-Para Azure OpenAI y Azure AI Search:
+For Azure OpenAI and Azure AI Search:
 
 **Portal:** Resource → Networking → Private endpoint → +Add → VNet: `llm-vnet`, Subnet: `pe-subnet`.
 
-> Verifica **Private DNS Zones** y enroutamiento. Si AKS no tiene salida pública, agrega un **NAT Gateway**.
+> Verify **Private DNS Zones** and routing. If AKS has no public outbound, add a **NAT Gateway**.
 
 ---
 
-## 11) Pruebas (Smoke Tests)
+## 11) Tests (Smoke Tests)
 
-```bash
+```powershell
 # Health check
 curl http://<EXTERNAL-IP>/health
 
-# Consulta de chat
-curl -X POST http://<EXTERNAL-IP>/chat \
-  -H "Content-Type: application/json" \
-  -d '{"q":"Hola, ¿qué puedes hacer?"}'
+# Chat query
+$body = '{"q":"Hello, what can you do?"}'
+Invoke-RestMethod -Method Post `
+  -Uri "http://<EXTERNAL-IP>/chat" `
+  -ContentType "application/json" `
+  -Body $body
 ```
 
 ---
 
-## 12) Observabilidad y Escalado
+## 12) Observability and Scaling
 
-```bash
+```powershell
 # Horizontal Pod Autoscaler
 kubectl autoscale deployment llmapi --cpu-percent=70 --min=2 --max=8
 kubectl get hpa
 ```
 
-> Habilita **Container Insights** y crea alertas de latencia, errores y costos en **Azure Monitor**.
+> Enable **Container Insights** and create latency, error, and cost alerts in **Azure Monitor**.
 
 ---
 
-## 13) Cargar Documentos y Embeddings (RAG)
+## 13) Load Documents and Embeddings (RAG)
 
-Usa el notebook adjunto para:
+Use the attached notebook to:
 
-1. Leer documentos (PDF / MD / HTML / TXT).
-2. Generar embeddings con Azure OpenAI (deployment de embeddings).
-3. Subir documentos + vectores a Azure AI Search (indexación).
+1. Read documents (PDF / MD / HTML / TXT).
+2. Generate embeddings with Azure OpenAI (embeddings deployment).
+3. Upload documents + vectors to Azure AI Search (indexing).
 
 ---
 
-## Diagrama de Arquitectura – Flujo (Azure)
+## Architecture Diagram – Flow (Azure)
 
 ```
-Usuario
+User
   │
   ▼
 Application Gateway / NGINX Ingress
@@ -386,70 +391,73 @@ AKS (llm-aks)
   │
   └─ Secrets ◄── Key Vault (CSI / Managed Identity)
 
-ACR (llmacr001) ──► imagen llmapi:latest
+ACR (llmacr001) ──► image llmapi:latest
 ```
 
 ---
 
-## Troubleshooting Rápido
+## Quick Troubleshooting
 
-| Síntoma | Causa probable | Acción |
+| Symptom | Probable Cause | Action |
 |---|---|---|
-| Pods `CrashLoopBackOff` | Variables faltantes o permisos | `kubectl logs deploy/llmapi` |
-| Ingress sin `EXTERNAL-IP` | Cuota de Public IPs / LoadBalancers agotada | Revisar cuotas en el portal |
-| `401`/`403` en Azure OpenAI | KEY, endpoint, deployment o `api_version` incorrectos | Verificar variables de entorno |
-| Error vector dims en Search | `vectorSearchDimensions` no coincide con el modelo de embeddings | Igualar dimensiones (ej. 1536) |
-| Timeouts con Private Endpoints | Private DNS, NSG o NAT Gateway mal configurados | Revisar DNS Zones y NSGs |
+| Pods `CrashLoopBackOff` | Missing variables or permissions | `kubectl logs deploy/llmapi` |
+| Ingress with no `EXTERNAL-IP` | Public IP / LoadBalancer quota exhausted | Check quotas in the portal |
+| `401`/`403` on Azure OpenAI | Wrong KEY, endpoint, deployment or `api_version` | Verify environment variables |
+| Vector dims error in Search | `vectorSearchDimensions` does not match embeddings model | Match dimensions (e.g. 1536) |
+| Timeouts with Private Endpoints | Private DNS, NSG or NAT Gateway misconfigured | Review DNS Zones and NSGs |
 
 ---
 
-## Limpieza (PoC)
+## Cleanup (PoC)
 
-```bash
+```powershell
 az group delete -n llm-rg --yes --no-wait
 ```
 
 ---
 
-## Apéndice A — Key Vault CSI + Managed Identity (Producción)
+## Appendix A — Key Vault CSI + Managed Identity (Production)
 
-**Objetivo:** montar secretos desde Azure Key Vault en Pods de AKS sin exponer llaves, usando Managed Identity y el proveedor CSI de Key Vault.
+**Goal:** Mount secrets from Azure Key Vault into AKS Pods without exposing keys, using Managed Identity and the Key Vault CSI provider.
 
-### A1) Instalar Secret Store CSI Driver y Provider Azure
+### A1) Install Secret Store CSI Driver and Azure Provider
 
-```bash
-# Instalar el driver CSI
-helm repo add secrets-store-csi-driver \
+```powershell
+# Install the CSI driver
+helm repo add secrets-store-csi-driver `
   https://kubernetes-sigs.github.io/secrets-store-csi-driver/charts
 helm repo update
-helm upgrade --install csi-secrets-store \
-  secrets-store-csi-driver/secrets-store-csi-driver \
+helm upgrade --install csi-secrets-store `
+  secrets-store-csi-driver/secrets-store-csi-driver `
   --namespace kube-system
 ```
 
-> ⚠️ **Corrección aplicada:** La URL original apuntaba a `secretproviderclasspodidentity.yaml` (AAD Pod Identity, deprecado). Se reemplaza por el deployment estándar del provider de Azure:
+> ⚠️ **Correction applied:** The original URL pointed to `secretproviderclasspodidentity.yaml` (AAD Pod Identity, deprecated). Replaced with the standard Azure provider deployment:
 
-```bash
-# Instalar provider de Azure (deployment estándar)
+```powershell
+# Install Azure provider (standard deployment)
 kubectl apply -f https://raw.githubusercontent.com/Azure/secrets-store-csi-driver-provider-azure/master/deployment/provider-azure-installer.yaml
 ```
 
-### A2) Vincular AKS con Managed Identity
+### A2) Link AKS with Managed Identity
 
-```bash
-# (si no lo hiciste antes)
+```powershell
+# (if not done before)
 az identity create -g llm-rg -n llm-mi-aks
 
-# Dar rol de "Key Vault Secrets User" a la MI sobre el Key Vault
-az role assignment create \
-  --assignee $(az identity show -g llm-rg -n llm-mi-aks --query principalId -o tsv) \
-  --role "Key Vault Secrets User" \
-  --scope $(az keyvault show -g llm-rg -n llm-kv-001 --query id -o tsv)
+# Grant "Key Vault Secrets User" role to the MI on the Key Vault
+$principalId = az identity show -g llm-rg -n llm-mi-aks --query principalId -o tsv
+$kvScope     = az keyvault show -g llm-rg -n llm-kv-001 --query id -o tsv
+
+az role assignment create `
+  --assignee $principalId `
+  --role "Key Vault Secrets User" `
+  --scope $kvScope
 ```
 
 ### A3) SecretProviderClass (YAML)
 
-Define qué secretos montar desde el Key Vault y cómo exponerlos en el Pod:
+Defines which secrets to mount from Key Vault and how to expose them in the Pod:
 
 ```yaml
 apiVersion: secrets-store.csi.x-k8s.io/v1
@@ -461,7 +469,7 @@ spec:
   parameters:
     usePodIdentity:         "false"
     useVMManagedIdentity:   "true"
-    userAssignedIdentityID: "<CLIENT_ID_DE_TU_MI>"   # az identity show ... --query clientId -o tsv
+    userAssignedIdentityID: "<CLIENT_ID_OF_YOUR_MI>"   # az identity show ... --query clientId -o tsv
     keyvaultName:           "llm-kv-001"
     cloudName:              ""
     objects: |
@@ -473,7 +481,7 @@ spec:
           objectName: SEARCH-KEY
           objectType: secret
     tenantId: "<TENANT_ID>"
-  secretObjects:                         # opcional: sincronizar a K8s Secret
+  secretObjects:                         # optional: sync to K8s Secret
   - secretName: app-secrets
     type: Opaque
     data:
@@ -483,7 +491,7 @@ spec:
       key: SEARCH_KEY
 ```
 
-### A4) Montaje en el Deployment
+### A4) Mount in the Deployment
 
 ```yaml
 spec:
@@ -507,37 +515,39 @@ spec:
         - name: AOAI_KEY
           valueFrom:
             secretKeyRef:
-              name: app-secrets    # requiere secretObjects definido arriba
+              name: app-secrets    # requires secretObjects defined above
               key: AOAI_KEY
 ```
 
-> **Tips:** rota secretos en Key Vault, usa RBAC mínimo necesario y audita accesos con Azure AD y Key Vault logs.
+> **Tips:** Rotate secrets in Key Vault, use minimum required RBAC, and audit access with Azure AD and Key Vault logs.
 
 ---
 
-## Apéndice B — Application Gateway Ingress Controller (AGIC) + WAF
+## Appendix B — Application Gateway Ingress Controller (AGIC) + WAF
 
-**Objetivo:** usar Azure Application Gateway (con o sin WAF) como Ingress para AKS, habilitando TLS administrado, políticas L7 y Private Link.
+**Goal:** Use Azure Application Gateway (with or without WAF) as Ingress for AKS, enabling managed TLS, L7 policies, and Private Link.
 
-### B1) Crear Application Gateway (Portal)
+### B1) Create Application Gateway (Portal)
 
-Portal → Create a resource → **Application Gateway** → elige SKU (`Standard_v2` o `WAF_v2`), VNet/Subnet dedicadas (p. ej. `agw-subnet`).
+Portal → Create a resource → **Application Gateway** → choose SKU (`Standard_v2` or `WAF_v2`), dedicated VNet/Subnet (e.g. `agw-subnet`).
 
-### B2) Habilitar AGIC en AKS
+### B2) Enable AGIC on AKS
 
-```bash
-az aks enable-addons -g llm-rg -n llm-aks -a ingress-appgw \
-  --appgw-id $(az network application-gateway show \
-    -g llm-rg -n <APPGW_NAME> --query id -o tsv)
+```powershell
+$appgwId = az network application-gateway show `
+  -g llm-rg -n <APPGW_NAME> --query id -o tsv
+
+az aks enable-addons -g llm-rg -n llm-aks -a ingress-appgw `
+  --appgw-id $appgwId
 ```
 
-### B3) Ingress para AGIC (anotaciones)
+### B3) Ingress for AGIC (annotations)
 
-Archivo: **`ingress-agic-tls.yaml`**
+File: **`ingress-agic-tls.yaml`**
 
-> Reemplaza `<YOUR_HOSTNAME>` por tu dominio real (ej. `llmapi.example.com`).
+> Replace `<YOUR_HOSTNAME>` with your real domain (e.g. `llmapi.example.com`).
 >
-> **Sobre el TLS:** la terminación TLS ocurre en el Application Gateway (`WAF_v2` / `Standard_v2`). El campo `secretName: dummy-tls` es un **placeholder** requerido por el spec de Kubernetes Ingress — AGIC lo ignora y usa el certificado configurado directamente en el **Listener** del App Gateway. No es necesario que exista un Secret real con ese nombre para que el enrutamiento funcione.
+> **About TLS:** TLS termination occurs at the Application Gateway (`WAF_v2` / `Standard_v2`). The `secretName: dummy-tls` field is a **placeholder** required by the Kubernetes Ingress spec — AGIC ignores it and uses the certificate configured directly in the App Gateway **Listener**. A real Secret with that name is not required for routing to work.
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -549,7 +559,7 @@ metadata:
 spec:
   tls:
   - hosts: ["<YOUR_HOSTNAME>"]
-    secretName: dummy-tls    # placeholder – AGIC usa el cert del App Gateway Listener
+    secretName: dummy-tls    # placeholder – AGIC uses the App Gateway Listener cert
   rules:
   - host: <YOUR_HOSTNAME>
     http:
@@ -563,11 +573,11 @@ spec:
               number: 80
 ```
 
-### B4) Secret TLS Placeholder (opcional)
+### B4) TLS Placeholder Secret (optional)
 
-Archivo: **`dummy-tls-secret.yaml`**
+File: **`dummy-tls-secret.yaml`**
 
-Si Kubernetes requiere que el Secret exista (algunos controladores lo validan), crea uno vacío. **No es el certificado real del Gateway.**
+If Kubernetes requires the Secret to exist (some controllers validate it), create an empty one. **This is not the real Gateway certificate.**
 
 ```yaml
 apiVersion: v1
@@ -580,41 +590,41 @@ data:
   tls.key: ""
 ```
 
-### B5) Aplicar los manifiestos
+### B5) Apply the manifests
 
-```bash
-kubectl apply -f dummy-tls-secret.yaml    # opcional
+```powershell
+kubectl apply -f dummy-tls-secret.yaml    # optional
 kubectl apply -f ingress-agic-tls.yaml
 ```
 
-> **Notas finales:** configura el Listener / HTTP Settings / Backend Pools en el App Gateway. Si usas WAF, define reglas y exclusiones. Para Private Link + App Gateway, integra con Private DNS Zones.
+> **Final notes:** Configure the Listener / HTTP Settings / Backend Pools in the App Gateway. If using WAF, define rules and exclusions. For Private Link + App Gateway, integrate with Private DNS Zones.
 
 ---
 
-## Apéndice C — Dataset Real + Chunking para RAG (tiktoken)
+## Appendix C — Real Dataset + Chunking for RAG (tiktoken)
 
-**Objetivo:** mejorar la recuperación y precisión RAG partiendo documentos en fragmentos ("chunks") con solapamiento y metadatos.
+**Goal:** Improve RAG retrieval and accuracy by splitting documents into overlapping chunks with metadata.
 
-### C0) Mini Dataset de Ejemplo
+### C0) Sample Mini Dataset
 
-La guía incluye un conjunto de documentos de prueba en la carpeta `./data/`, que debe estar en el mismo directorio que el notebook `Notebook_Azure_RAG_Indexing.ipynb`:
+The guide includes a set of test documents in the `./data/` folder, which must be in the same directory as the `Notebook_Azure_RAG_Indexing.ipynb` notebook:
 
 ```
 ./data/
-├── faq_llm.txt       # Preguntas frecuentes del asistente LLM
-├── policy_llm.txt    # Política de uso del asistente
-└── howto_llm.txt     # Guía rápida de uso
+├── faq_llm.txt       # LLM assistant frequently asked questions
+├── policy_llm.txt    # Assistant usage policy
+└── howto_llm.txt     # Quick usage guide
 ```
 
-> Si ubicas la carpeta en otra ruta, ajusta la variable `DATA_DIR` en el notebook:
+> If you place the folder in a different path, update the `DATA_DIR` variable in the notebook:
 >
 > ```python
-> DATA_DIR = "./data"   # ← cambia a la ruta donde esté la carpeta
+> DATA_DIR = "./data"   # ← change to the path where the folder is located
 > ```
 
-### C1) Paquetes y Función de Chunking
+### C1) Packages and Chunking Function
 
-```bash
+```powershell
 pip install tiktoken unstructured
 ```
 
@@ -638,23 +648,23 @@ def chunk_text(
     return chunks
 ```
 
-### C2) Metadatos y Upsert
+### C2) Metadata and Upsert
 
-Incluye metadatos como título, fuente, página, timestamp o versión del dataset para trazabilidad:
+Include metadata such as title, source, page, timestamp, or dataset version for traceability:
 
 ```python
 import os, glob
 from azure.search.documents import SearchClient
 from azure.core.credentials import AzureKeyCredential
 
-# search_client ya inicializado con AzureKeyCredential (ver paso 5)
+# search_client already initialized with AzureKeyCredential (see step 5)
 
 for path in glob.glob(f"{DATA_DIR}/*.txt"):
     content = open(path, "r", encoding="utf-8", errors="ignore").read()
     parts = chunk_text(content, 400, 60)
     batch = []
     for idx, part in enumerate(parts):
-        vec = embed(part)   # función que llama al deployment de embeddings
+        vec = embed(part)   # function that calls the embeddings deployment
         item = {
             "id":            f"{os.path.basename(path)}#{idx:04d}",
             "content":       part,
@@ -665,8 +675,8 @@ for path in glob.glob(f"{DATA_DIR}/*.txt"):
     search_client.upload_documents(documents=batch)
 ```
 
-> **Recomendaciones:**
-> - Evalúa tamaño de chunk: 300–600 tokens.
+> **Recommendations:**
+> - Evaluate chunk size: 300–600 tokens.
 > - Overlap: 40–100 tokens.
-> - Normaliza texto (limpieza HTML / PDF).
-> - Considera particionar por secciones semánticas si es posible.
+> - Normalize text (clean HTML / PDF).
+> - Consider splitting by semantic sections when possible.
