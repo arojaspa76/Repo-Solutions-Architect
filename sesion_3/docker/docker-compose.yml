@@ -1,0 +1,154 @@
+# ============================================================
+# docker-compose.yml — Stack completo local
+# Sesión 3: Kubernetes, Docker y Contenedores para LLMs
+# ============================================================
+#
+# Este archivo define el stack completo para desarrollo local:
+# - llm-gateway: nuestra API FastAPI
+# - ollama: servidor de LLMs locales
+# - prometheus: recolección de métricas
+# - grafana: visualización de métricas
+#
+# Uso:
+#   docker compose up -d              # Iniciar todos los servicios
+#   docker compose up -d llm-gateway  # Solo la app
+#   docker compose logs -f            # Ver logs
+#   docker compose down               # Detener todo
+#   docker compose ps                 # Estado de los servicios
+# ============================================================
+
+name: llm-session3
+
+services:
+
+  # ── 1. Ollama — LLM Server local ─────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"           # API de Ollama
+    volumes:
+      - ollama_data:/root/.ollama  # Persistir modelos descargados
+    environment:
+      - OLLAMA_NUM_PARALLEL=2   # Peticiones simultáneas
+      - OLLAMA_MAX_LOADED_MODELS=2
+    # GPU support (descomenta si tienes NVIDIA GPU)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - llm-network
+
+  # ── 2. Descarga automática de modelos ────────────────────────────────────
+  # Este servicio descarga el modelo al iniciar y termina
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: ollama-pull
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+        echo '📥 Descargando llama3.2:3b (puede tardar varios minutos)...'
+        ollama pull llama3.2:3b
+        echo '✅ Modelo descargado!'
+      "
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    networks:
+      - llm-network
+    restart: "no"  # Ejecutar solo una vez
+
+  # ── 3. LLM Gateway API ───────────────────────────────────────────────────
+  llm-gateway:
+    build:
+      context: ..              # Contexto desde la raíz del proyecto
+      dockerfile: docker/Dockerfile
+    container_name: llm-gateway
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - OLLAMA_HOST=http://ollama:11434   # URL interna de Docker
+      - LOG_LEVEL=INFO
+    env_file:
+      - ../.env                           # Variables adicionales (API keys)
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - llm-network
+    # Límites de recursos (simula ambiente cloud)
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  # ── 4. Prometheus — Métricas ─────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=7d'
+    networks:
+      - llm-network
+
+  # ── 5. Grafana — Dashboard ───────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=bsg2024
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - llm-network
+
+# ── Volúmenes persistentes ────────────────────────────────────────────────────
+volumes:
+  ollama_data:
+    name: ollama_models_cache   # Cache de modelos Ollama
+  prometheus_data:
+  grafana_data:
+
+# ── Red interna ───────────────────────────────────────────────────────────────
+networks:
+  llm-network:
+    name: llm-session3-network
+    driver: bridge

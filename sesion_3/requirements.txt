@@ -1,0 +1,63 @@
+# ============================================================
+# Sesión 3: Infraestructura Escalable para LLMs
+# BSG Institute — Diseño de Infraestructura Escalable para LLMs
+# ============================================================
+
+# --- FastAPI Core ---
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.12
+
+# --- Pydantic (validación de datos) ---
+pydantic==2.10.3
+pydantic-settings==2.6.1
+
+# --- HTTP clients ---
+httpx==0.28.0
+aiohttp==3.11.10
+requests==2.32.3
+
+# --- Ollama (LLM local) ---
+ollama==0.4.4
+
+# --- Azure OpenAI ---
+openai==1.57.2                    # Compatible con Azure OpenAI
+azure-identity==1.19.0
+azure-keyvault-secrets==4.9.0
+
+# --- Google Cloud (Vertex AI) ---
+google-cloud-aiplatform==1.74.0
+google-auth==2.36.0
+vertexai==1.74.0
+
+# --- AWS (Bedrock) ---
+boto3==1.35.80
+botocore==1.35.80
+
+# --- LangChain (orquestación) ---
+langchain==0.3.11
+langchain-community==0.3.11
+langchain-openai==0.2.12
+
+# --- Embeddings y Vector Search ---
+sentence-transformers==3.3.1
+chromadb==0.5.23
+numpy==2.2.0
+
+# --- Monitoreo y Logging ---
+prometheus-client==0.21.1
+python-json-logger==3.2.0
+loguru==0.7.3
+
+# --- Utilidades ---
+python-dotenv==1.0.1
+tenacity==9.0.0               # Reintentos con backoff exponencial
+cachetools==5.5.0
+pyyaml==6.0.2
+rich==13.9.4                  # Output bonito en terminal
+
+# --- Testing ---
+pytest==8.3.4
+pytest-asyncio==0.24.0
+httpx==0.28.0                 # Para TestClient de FastAPI
+pytest-cov==6.0.0

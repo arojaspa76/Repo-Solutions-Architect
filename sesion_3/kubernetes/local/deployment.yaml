@@ -1,0 +1,220 @@
+# ============================================================
+# kubernetes/local/deployment.yaml
+# Kubernetes local con Minikube
+# Sesión 3: BSG Institute
+# ============================================================
+#
+# Este archivo define todos los recursos Kubernetes para
+# desplegar la LLM Gateway API en Minikube (local).
+#
+# Uso:
+#   minikube start
+#   kubectl apply -f kubernetes/local/
+#   minikube service llm-gateway-service --url
+# ============================================================
+
+---
+# ── 1. Namespace: aísla los recursos de esta app ────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: llm-session3
+  labels:
+    app: llm-gateway
+    environment: local
+    curso: bsg-llm-infra
+
+---
+# ── 2. ConfigMap: variables de configuración (no secretas) ──────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llm-gateway-config
+  namespace: llm-session3
+data:
+  # URL de Ollama dentro del cluster
+  OLLAMA_HOST: "http://ollama-service:11434"
+  ENVIRONMENT: "local"
+  LOG_LEVEL: "INFO"
+  PORT: "8000"
+
+---
+# ── 3. Deployment de la API FastAPI ─────────────────────────────────────────
+# Un Deployment garantiza que siempre haya N réplicas corriendo
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-gateway
+  namespace: llm-session3
+  labels:
+    app: llm-gateway
+    version: "1.0.0"
+spec:
+  # Número de réplicas (pods) en ejecución
+  replicas: 2
+  
+  # Selector: qué pods maneja este Deployment
+  selector:
+    matchLabels:
+      app: llm-gateway
+  
+  # Estrategia de actualización sin downtime
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # Máximo 1 pod extra durante actualización
+      maxUnavailable: 0  # Nunca bajar la capacidad durante actualización
+  
+  # Plantilla del Pod
+  template:
+    metadata:
+      labels:
+        app: llm-gateway
+        version: "1.0.0"
+    spec:
+      containers:
+        - name: llm-gateway
+          # La imagen que construimos con Docker
+          image: llm-gateway:latest
+          imagePullPolicy: IfNotPresent   # Usar imagen local en Minikube
+          
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          
+          # Variables de entorno desde ConfigMap
+          envFrom:
+            - configMapRef:
+                name: llm-gateway-config
+          
+          # Límites de recursos
+          resources:
+            requests:
+              cpu: "100m"      # 0.1 CPU garantizada
+              memory: "256Mi"  # 256MB garantizados
+            limits:
+              cpu: "500m"      # Máximo 0.5 CPU
+              memory: "512Mi"  # Máximo 512MB
+          
+          # ── Probes ─────────────────────────────────────────────────────
+          # Liveness: si falla → reiniciar el pod
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30    # Esperar 30s antes de verificar
+            periodSeconds: 30          # Verificar cada 30s
+            failureThreshold: 3        # 3 fallos → reiniciar
+          
+          # Readiness: si falla → no enviar tráfico
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+
+---
+# ── 4. Service: expone el Deployment internamente ────────────────────────────
+# Un Service da una IP fija y DNS name a un conjunto de pods
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-gateway-service
+  namespace: llm-session3
+  labels:
+    app: llm-gateway
+spec:
+  # NodePort expone el servicio en un puerto del nodo
+  # En producción usaríamos LoadBalancer o Ingress
+  type: NodePort
+  selector:
+    app: llm-gateway
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80          # Puerto del Service
+      targetPort: 8000  # Puerto del contenedor
+      nodePort: 30080   # Puerto accesible desde fuera del cluster
+
+---
+# ── 5. Deployment de Ollama ──────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: llm-session3
+spec:
+  replicas: 1  # Ollama es stateful, solo 1 réplica
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          ports:
+            - containerPort: 11434
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "2Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          volumeMounts:
+            - name: ollama-storage
+              mountPath: /root/.ollama
+      volumes:
+        - name: ollama-storage
+          emptyDir: {}   # En producción: PersistentVolumeClaim
+
+---
+# ── 6. Service de Ollama ─────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama-service
+  namespace: llm-session3
+spec:
+  type: ClusterIP   # Solo accesible dentro del cluster
+  selector:
+    app: ollama
+  ports:
+    - port: 11434
+      targetPort: 11434
+
+---
+# ── 7. HorizontalPodAutoscaler ───────────────────────────────────────────────
+# Escala automáticamente los pods según la carga
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: llm-gateway-hpa
+  namespace: llm-session3
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: llm-gateway
+  minReplicas: 2    # Mínimo de pods
+  maxReplicas: 10   # Máximo de pods
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70   # Escalar cuando CPU > 70%
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80   # Escalar cuando RAM > 80%
