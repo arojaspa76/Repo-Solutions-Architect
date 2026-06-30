@@ -47,7 +47,7 @@ Este repositorio contiene todo el material práctico de la **Sesión 3**, donde 
 ## 📁 Estructura del Repositorio
 
 ```
-session3-infra-llm/
+sesion_3/
 ├── README.md                          # Este archivo
 ├── requirements.txt                   # Dependencias Python
 ├── .env.example                       # Variables de entorno (plantilla)
@@ -121,13 +121,14 @@ kubectl version         # kubectl 1.28+
 ### 1. Clonar y Configurar
 
 ```bash
-git clone https://github.com/tu-usuario/session3-infra-llm.git
-cd session3-infra-llm
+git clone https://github.com/arojaspa76/Repo-Solutions-Architect.git
+cd Repo-Solutions-Architect
+cd sesion_3
 
 # Crear entorno virtual
-python -m venv venv
-source venv/bin/activate       # Linux/Mac
-# venv\Scripts\activate        # Windows
+python -m venv .venv
+source .venv/bin/activate       # Linux/Mac
+# .venv\Scripts\activate        # Windows
 
 # Instalar dependencias
 pip install -r requirements.txt
