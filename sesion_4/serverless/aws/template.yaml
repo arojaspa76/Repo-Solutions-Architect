@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  BSG Institute — Sesión 4: LLM Summarizer en AWS Lambda
+  Mismo ejercicio que Azure Functions y Google Cloud Functions.
+
+Globals:
+  Function:
+    Timeout: 300
+    MemorySize: 512
+    Runtime: python3.12
+    Environment:
+      Variables:
+        USE_OLLAMA: "false"
+        AWS_DEFAULT_REGION: !Ref AWS::Region
+
+Parameters:
+  BedrockModelId:
+    Type: String
+    Default: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    Description: ID del modelo en Amazon Bedrock
+
+Resources:
+  # ── API Gateway ────────────────────────────────────────────────────────────
+  LLMApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Cors:
+        AllowMethods: "'POST,GET,OPTIONS'"
+        AllowHeaders: "'Content-Type'"
+        AllowOrigin: "'*'"
+
+  # ── Lambda Function ────────────────────────────────────────────────────────
+  LLMFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: bsg-llm-summarize
+      Handler: handler.lambda_handler
+      CodeUri: .
+      Description: LLM Summarizer — BSG Institute Sesión 4
+      Environment:
+        Variables:
+          AWS_BEDROCK_MODEL_ID: !Ref BedrockModelId
+      Policies:
+        # Permiso para invocar modelos de Bedrock
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource:
+                - !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/*"
+      Events:
+        # POST /summarize
+        SummarizePost:
+          Type: Api
+          Properties:
+            RestApiId: !Ref LLMApi
+            Path: /summarize
+            Method: POST
+        # GET /summarize (health check)
+        SummarizeGet:
+          Type: Api
+          Properties:
+            RestApiId: !Ref LLMApi
+            Path: /summarize
+            Method: GET
+
+  # ── CloudWatch Log Group ───────────────────────────────────────────────────
+  LLMFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LLMFunction}"
+      RetentionInDays: 7
+
+Outputs:
+  LLMApiUrl:
+    Description: "URL del endpoint en API Gateway"
+    Value: !Sub "https://${LLMApi}.execute-api.${AWS::Region}.amazonaws.com/prod/summarize"
+  LLMFunctionArn:
+    Description: "ARN de la función Lambda"
+    Value: !GetAtt LLMFunction.Arn

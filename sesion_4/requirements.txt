@@ -1,0 +1,76 @@
+# ============================================================
+# Sesión 4: Serverless, Latencia y Alta Disponibilidad para LLMs
+# BSG Institute — Diseño de Infraestructura Escalable para LLMs
+# ============================================================
+
+# --- FastAPI Core ---
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.12
+
+# --- Pydantic ---
+pydantic==2.10.3
+pydantic-settings==2.6.1
+
+# --- HTTP clients ---
+httpx==0.28.0
+aiohttp==3.11.10
+requests==2.32.3
+
+# --- Ollama (LLM local — sin costo, sin API key) ---
+ollama==0.6.2                     # NOTA: usar 0.6.2+, no 0.4.x (conflicto con httpx)
+
+# --- Cache y Rate Limiting ---
+redis==5.2.1                      # Cache distribuido
+cachetools==5.5.0                 # Cache en memoria (fallback sin Redis)
+slowapi==0.1.9                    # Rate limiting para FastAPI
+
+# --- Circuit Breaker ---
+pybreaker==1.2.0                  # Circuit breaker pattern
+
+# --- Azure ---
+openai==1.57.2                    # Azure OpenAI
+azure-identity==1.19.0
+azure-functions==1.21.3           # Azure Functions SDK local
+
+# --- Google Cloud ---
+google-cloud-aiplatform==1.74.0
+google-auth==2.36.0
+functions-framework==3.8.2        # Cloud Functions local dev
+
+# --- AWS ---
+boto3==1.35.80
+botocore==1.35.80
+
+# --- LangChain ---
+langchain==0.3.11
+langchain-community==0.3.11
+langchain-openai==0.2.12
+
+# --- Monitoreo y Métricas ---
+prometheus-client==0.21.1
+opentelemetry-api==1.29.0
+opentelemetry-sdk==1.29.0
+opentelemetry-instrumentation-fastapi==0.50b0
+python-json-logger==3.2.0
+loguru==0.7.3
+
+# --- Pruebas de Carga (Python) ---
+locust==2.32.3                    # Alternativa a k6 en Python
+
+# --- Análisis de Resultados ---
+pandas==2.2.3
+matplotlib==3.9.3
+rich==13.9.4
+tabulate==0.9.0
+
+# --- Utilidades ---
+python-dotenv==1.0.1
+tenacity==9.0.0                   # Reintentos con backoff exponencial
+pyyaml==6.0.2
+typer==0.15.1                     # CLI scripts
+
+# --- Testing ---
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0

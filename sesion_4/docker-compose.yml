@@ -1,0 +1,136 @@
+version: "3.9"
+
+# =============================================================
+# Stack Completo — Sesión 4: Serverless + Alta Disponibilidad
+# BSG Institute
+# =============================================================
+# Servicios:
+#   - llm-gateway:  FastAPI (http://localhost:8000)
+#   - ollama:       LLM local  (http://localhost:11434)
+#   - redis:        Cache distribuido
+#   - prometheus:   Métricas (http://localhost:9090)
+#   - grafana:      Dashboards (http://localhost:3000, admin/admin)
+#
+# Uso:
+#   docker-compose up -d
+#   docker-compose logs -f llm-gateway
+#   docker-compose down
+# =============================================================
+
+services:
+
+  # ── LLM Gateway (FastAPI) ────────────────────────────────────────────────
+  llm-gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: llm-gateway:session4
+    container_name: bsg-llm-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=docker
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - REDIS_URL=redis://redis:6379/0
+      - ENABLE_CACHE=true
+      - LOG_LEVEL=INFO
+      - PROMETHEUS_ENABLED=true
+    depends_on:
+      ollama:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Ollama (LLM local) ───────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: bsg-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Inicializar Ollama con el modelo ────────────────────────────────────
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: bsg-ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ollama-data:/root/.ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "⏳ Descargando modelo llama3.2:3b (primera vez: ~2GB)..."
+        OLLAMA_HOST=http://ollama:11434 ollama pull llama3.2:3b
+        echo "✅ Modelo listo"
+    restart: "no"
+
+  # ── Redis (cache) ────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: bsg-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── Prometheus (métricas) ────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: bsg-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+
+  # ── Grafana (dashboards) ──────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: bsg-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  ollama-data:    # Modelos Ollama (persiste entre reinicios)
+  redis-data:     # Cache Redis
+  prometheus-data:
+  grafana-data:

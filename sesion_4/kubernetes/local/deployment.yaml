@@ -1,0 +1,235 @@
+# =============================================================
+# Kubernetes — LLM Gateway en Minikube (desarrollo local)
+# Sesión 4: Autoescalado con HPA
+# =============================================================
+# Prerrequisitos:
+#   minikube start --cpus=4 --memory=8192
+#   minikube addons enable metrics-server
+#   eval $(minikube docker-env)     # Linux/Mac
+#   minikube docker-env | Invoke-Expression  # Windows PowerShell
+#
+# Uso:
+#   kubectl apply -f kubernetes/local/
+#   kubectl get hpa -n llm-prod -w   # Observar escalado
+# =============================================================
+
+---
+# Namespace aislado para nuestros servicios LLM
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: llm-prod
+  labels:
+    app: llm-gateway
+    env: local
+
+---
+# ConfigMap — variables de configuración (no secretos)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llm-config
+  namespace: llm-prod
+data:
+  ENVIRONMENT: "local"
+  LOG_LEVEL: "INFO"
+  OLLAMA_BASE_URL: "http://ollama-service:11434"
+  ENABLE_CACHE: "true"
+  RATE_LIMIT_PER_MINUTE: "60"
+
+---
+# Secret — credenciales (en producción usar Azure Key Vault / GCP Secret Manager / AWS Secrets Manager)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: llm-secrets
+  namespace: llm-prod
+type: Opaque
+stringData:
+  REDIS_URL: "redis://redis-service:6379/0"
+  # Agregar aquí: AZURE_OPENAI_API_KEY, etc.
+
+---
+# Deployment — LLM Gateway FastAPI
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-gateway
+  namespace: llm-prod
+  labels:
+    app: llm-gateway
+    version: "2.0"
+spec:
+  replicas: 2                   # Mínimo 2 para alta disponibilidad
+  selector:
+    matchLabels:
+      app: llm-gateway
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1               # Máximo 1 pod extra durante update
+      maxUnavailable: 0         # 0 pods abajo durante update (zero downtime)
+  template:
+    metadata:
+      labels:
+        app: llm-gateway
+        version: "2.0"
+    spec:
+      containers:
+        - name: llm-gateway
+          image: llm-gateway:latest
+          imagePullPolicy: Never  # Para imágenes locales en Minikube
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: llm-config
+            - secretRef:
+                name: llm-secrets
+          resources:
+            requests:
+              cpu: "250m"         # 0.25 CPU = lo que pide al scheduler
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"        # 1 CPU máximo
+              memory: "512Mi"     # 512MB máximo
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+
+---
+# Deployment — Ollama (LLM local)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: llm-prod
+spec:
+  replicas: 1    # Solo 1 instancia de Ollama (modelo en memoria)
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      initContainers:
+        # Descargar el modelo antes de iniciar Ollama
+        - name: pull-model
+          image: ollama/ollama:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              ollama serve &
+              sleep 5
+              ollama pull llama3.2:3b
+              kill %1
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          ports:
+            - containerPort: 11434
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "3Gi"       # llama3.2:3b necesita ~2.5GB
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+      volumes:
+        - name: ollama-data
+          emptyDir: {}             # En prod usar PersistentVolumeClaim
+
+---
+# Deployment — Redis (cache)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: llm-prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          command: ["redis-server", "--maxmemory", "200mb", "--maxmemory-policy", "allkeys-lru"]
+
+---
+# Services — exponemos cada deployment
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-gateway-service
+  namespace: llm-prod
+spec:
+  type: NodePort           # NodePort para acceso externo en Minikube
+  selector:
+    app: llm-gateway
+  ports:
+    - port: 80
+      targetPort: 8000
+      nodePort: 30080      # Acceder via: minikube service llm-gateway-service -n llm-prod
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama-service
+  namespace: llm-prod
+spec:
+  type: ClusterIP          # Solo accesible dentro del clúster
+  selector:
+    app: ollama
+  ports:
+    - port: 11434
+      targetPort: 11434
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: llm-prod
+spec:
+  type: ClusterIP
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379

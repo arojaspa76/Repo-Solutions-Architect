@@ -1,0 +1,58 @@
+# =============================================================
+# KEDA ScaledObject — Escalar según requests HTTP
+# Sesión 4: Alta Disponibilidad con event-driven autoscaling
+# =============================================================
+# KEDA = Kubernetes Event-Driven Autoscaling
+# Ventaja sobre HPA clásico: puede escalar a 0 pods (ahorro máximo)
+# y escalar por métricas externas como colas, HTTP traffic, Redis, etc.
+# =============================================================
+
+---
+# KEDA HTTP Add-on — escalar según tráfico HTTP entrante
+# Prerequisito: instalar KEDA HTTP Add-on
+# helm install http-add-on kedacore/keda-add-ons-http -n keda
+apiVersion: http.keda.sh/v1alpha1
+kind: HTTPScaledObject
+metadata:
+  name: llm-gateway-http-scaler
+  namespace: llm-prod
+spec:
+  host: llm-gateway.bsginstitute.com    # Dominio del servicio
+  targetPendingRequests: 10             # 1 pod por cada 10 requests pendientes
+  scaledownPeriod: 300                  # Esperar 5 min antes de bajar a 0
+  scaleTargetRef:
+    name: llm-gateway
+    apiVersion: apps/v1
+    kind: Deployment
+    service: llm-gateway-service
+    port: 80
+  replicas:
+    min: 0       # Escalar a 0 cuando no hay tráfico (save cost!)
+    max: 20      # Hasta 20 pods en pico
+
+---
+# Alternativa: ScaledObject con Prometheus (si tienes Prometheus instalado)
+# Escala según la métrica llm_requests_total por segundo
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: llm-gateway-prometheus-scaler
+  namespace: llm-prod
+  annotations:
+    # Usar solo uno de los dos scalers (HTTP o Prometheus)
+    # Comentar si usas el HTTPScaledObject de arriba
+    keda.sh/disabled: "true"
+spec:
+  scaleTargetRef:
+    name: llm-gateway
+  minReplicaCount: 1
+  maxReplicaCount: 20
+  cooldownPeriod: 300
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-server.monitoring.svc.cluster.local
+        metricName: llm_requests_per_second
+        query: |
+          sum(rate(llm_requests_total{endpoint="/chat"}[1m]))
+        threshold: "5"          # Escalar cuando hay >5 req/s

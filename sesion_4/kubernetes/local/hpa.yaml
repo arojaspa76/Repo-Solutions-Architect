@@ -1,0 +1,80 @@
+# =============================================================
+# HPA — HorizontalPodAutoscaler
+# Sesión 4: Autoescalado automático de pods
+# =============================================================
+# El HPA observa métricas (CPU, memoria, custom) y ajusta
+# el número de réplicas del Deployment automáticamente.
+#
+# Cómo funciona:
+#   1. Metrics Server recolecta CPU/RAM cada 15s
+#   2. HPA Controller evalúa: replicas_deseadas = ceil(métrica_actual / objetivo)
+#   3. Si CPU promedio supera 70%, HPA agrega pods
+#   4. Si CPU baja, HPA reduce pods (tras 5 minutos de estabilización)
+#
+# Prerequisito: minikube addons enable metrics-server
+# =============================================================
+
+---
+# HPA para LLM Gateway
+# Escala de 2 a 10 pods según CPU
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: llm-gateway-hpa
+  namespace: llm-prod
+spec:
+  # Qué deployment controlar
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: llm-gateway
+
+  # Límites de réplicas
+  minReplicas: 2     # Mínimo 2 para alta disponibilidad
+  maxReplicas: 10    # Máximo 10 (ajustar según capacidad del cluster)
+
+  metrics:
+    # Métrica 1: CPU — escalar si supera 70% de uso promedio
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+    # Métrica 2: Memoria — escalar si supera 80% de uso
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+  # Comportamiento de escalado (evitar flapping)
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30     # Esperar 30s antes de escalar hacia arriba
+      policies:
+        - type: Pods
+          value: 2                        # Agregar máximo 2 pods a la vez
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300    # Esperar 5 min antes de reducir pods
+      policies:
+        - type: Pods
+          value: 1                        # Quitar máximo 1 pod a la vez
+          periodSeconds: 60
+
+---
+# Comando para observar HPA en tiempo real:
+#
+# kubectl get hpa -n llm-prod -w
+#
+# Salida esperada:
+# NAME               REFERENCE              TARGETS         MINPODS  MAXPODS  REPLICAS
+# llm-gateway-hpa   Deployment/llm-gateway  15%/70%  2        10       2
+#
+# Para generar carga y ver el escalado:
+# k6 run loadtesting/k6/load-test.js
+#
+# kubectl describe hpa llm-gateway-hpa -n llm-prod  # Ver eventos de escalado

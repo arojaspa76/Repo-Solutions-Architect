@@ -1,0 +1,4 @@
+# Dependencias para Google Cloud Function
+functions-framework==3.8.2
+httpx==0.28.0
+google-cloud-aiplatform==1.74.0
