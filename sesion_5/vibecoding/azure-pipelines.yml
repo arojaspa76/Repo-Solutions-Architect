@@ -1,0 +1,68 @@
+# Project:     GenAIDemo
+# Component:   CI/CD pipeline (root orchestrator)
+# Description: Validate, build, push and deploy GenAIDemo across environments
+# Owner:       Andrés Felipe Rojas Parra
+# Created:     2026-07
+
+trigger:
+  branches:
+    include:
+      - develop
+      - main
+  paths:
+    exclude:
+      - docs/**
+      - '*.md'
+
+pr:
+  branches:
+    include:
+      - develop
+      - main
+
+variables:
+  - group: genaidemo-kv-dev
+  - name: acrName
+    value: 'genaidemo-acr-dev'
+  - name: aksClusterName
+    value: 'genaidemo-aks-dev'
+  - name: resourceGroup
+    value: 'genaidemo-rg-dev'
+
+stages:
+  - stage: validate
+    displayName: 'Validate'
+    jobs:
+      - job: bicep_validate
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - script: az bicep build --file ops/bicep/main.bicep
+            displayName: 'az bicep lint'
+          - script: |
+              az deployment group what-if \
+                --resource-group $(resourceGroup) \
+                --template-file ops/bicep/main.bicep \
+                --parameters ops/bicep/parameters/dev.bicepparam
+            displayName: 'az deployment group what-if (dry run)'
+
+  - stage: build
+    displayName: 'Build'
+    dependsOn: validate
+    jobs:
+      - template: azure-pipelines/templates/build-backend.yml
+      - template: azure-pipelines/templates/build-frontend.yml
+
+  - stage: push
+    displayName: 'Push to ACR'
+    dependsOn: build
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - template: azure-pipelines/templates/push-acr.yml
+
+  - stage: deploy
+    displayName: 'Deploy to AKS'
+    dependsOn: push
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - template: azure-pipelines/templates/deploy-aks.yml

@@ -1,0 +1,13 @@
+# Project:     GenAIDemo
+# Component:   Kubernetes namespace
+# Description: Namespace for the GenAIDemo dev environment
+# Owner:       Andrés Felipe Rojas Parra
+# Created:     2026-07
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: genaidemo-dev
+  labels:
+    project: genaidemo
+    environment: dev

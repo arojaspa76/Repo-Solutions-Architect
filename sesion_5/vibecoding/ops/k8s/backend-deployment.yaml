@@ -1,0 +1,63 @@
+# Project:     GenAIDemo
+# Component:   Backend Kubernetes Deployment
+# Description: FastAPI backend deployment for genaidemo-dev
+# Owner:       Andrés Felipe Rojas Parra
+# Created:     2026-07
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: genaidemo-backend
+  namespace: genaidemo-dev
+  labels:
+    app: genaidemo-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: genaidemo-backend
+  template:
+    metadata:
+      labels:
+        app: genaidemo-backend
+    spec:
+      containers:
+        - name: genaidemo-backend
+          image: $(ACR_LOGIN_SERVER)/genaidemo-backend:latest
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          envFrom:
+            - secretRef:
+                name: genaidemo-secrets-sync
+            - configMapRef:
+                name: genaidemo-config
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: genaidemo-secrets

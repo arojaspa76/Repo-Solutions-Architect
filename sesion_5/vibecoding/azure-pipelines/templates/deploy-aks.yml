@@ -1,0 +1,87 @@
+# Project:     GenAIDemo
+# Component:   CI/CD pipeline template
+# Description: Deploy GenAIDemo manifests to AKS dev, with rollback on smoke test failure
+# Owner:       Andrés Felipe Rojas Parra
+# Created:     2026-07
+
+jobs:
+  - job: deploy_aks
+    displayName: 'Deploy to AKS (dev)'
+    pool:
+      vmImage: ubuntu-latest
+    condition: and(succeeded(), eq(variables['Build.SourceBranchName'], 'develop'))
+    steps:
+      - task: KubernetesManifest@1
+        displayName: 'Apply namespace'
+        inputs:
+          action: 'deploy'
+          kubernetesServiceConnection: '$(aksServiceConnection)'
+          namespace: 'genaidemo-dev'
+          manifests: 'ops/k8s/namespace.yaml'
+
+      - task: KubernetesManifest@1
+        displayName: 'Apply configmap'
+        inputs:
+          action: 'deploy'
+          kubernetesServiceConnection: '$(aksServiceConnection)'
+          namespace: 'genaidemo-dev'
+          manifests: 'ops/k8s/configmap.yaml'
+
+      - task: KubernetesManifest@1
+        displayName: 'Apply secret provider'
+        inputs:
+          action: 'deploy'
+          kubernetesServiceConnection: '$(aksServiceConnection)'
+          namespace: 'genaidemo-dev'
+          manifests: 'ops/k8s/secret-provider.yaml'
+
+      - task: KubernetesManifest@1
+        displayName: 'Apply deployments'
+        inputs:
+          action: 'deploy'
+          kubernetesServiceConnection: '$(aksServiceConnection)'
+          namespace: 'genaidemo-dev'
+          manifests: |
+            ops/k8s/backend-deployment.yaml
+            ops/k8s/frontend-deployment.yaml
+          containers: |
+            $(acrLoginServer)/genaidemo-backend:$(Build.BuildId)
+            $(acrLoginServer)/genaidemo-frontend:$(Build.BuildId)
+
+      - task: KubernetesManifest@1
+        displayName: 'Apply services'
+        inputs:
+          action: 'deploy'
+          kubernetesServiceConnection: '$(aksServiceConnection)'
+          namespace: 'genaidemo-dev'
+          manifests: 'ops/k8s/services.yaml'
+
+      - task: Kubernetes@1
+        displayName: 'Smoke test backend health'
+        name: smokeTest
+        inputs:
+          connectionType: 'Kubernetes Service Connection'
+          kubernetesServiceEndpoint: '$(aksServiceConnection)'
+          namespace: 'genaidemo-dev'
+          command: 'exec'
+          arguments: 'deploy/genaidemo-backend -- curl -sf http://localhost:8000/api/health'
+
+      - task: Kubernetes@1
+        displayName: 'Rollback backend on smoke test failure'
+        condition: failed()
+        inputs:
+          connectionType: 'Kubernetes Service Connection'
+          kubernetesServiceEndpoint: '$(aksServiceConnection)'
+          namespace: 'genaidemo-dev'
+          command: 'rollout'
+          arguments: 'undo deployment/genaidemo-backend'
+
+      - task: Kubernetes@1
+        displayName: 'Rollback frontend on smoke test failure'
+        condition: failed()
+        inputs:
+          connectionType: 'Kubernetes Service Connection'
+          kubernetesServiceEndpoint: '$(aksServiceConnection)'
+          namespace: 'genaidemo-dev'
+          command: 'rollout'
+          arguments: 'undo deployment/genaidemo-frontend'

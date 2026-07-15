@@ -1,0 +1,36 @@
+# Project:     GenAIDemo
+# Component:   CI/CD pipeline template
+# Description: Push backend and frontend images to Azure Container Registry
+# Owner:       Andrés Felipe Rojas Parra
+# Created:     2026-07
+
+jobs:
+  - job: push_acr
+    displayName: 'Push Images to ACR'
+    pool:
+      vmImage: ubuntu-latest
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+    steps:
+      - task: Docker@2
+        displayName: 'Build and push backend image'
+        inputs:
+          containerRegistry: '$(acrName)'
+          repository: 'genaidemo-backend'
+          command: 'buildAndPush'
+          Dockerfile: 'apps/api/Dockerfile'
+          buildContext: '.'
+          tags: |
+            $(Build.BuildId)
+            latest
+
+      - task: Docker@2
+        displayName: 'Build and push frontend image'
+        inputs:
+          containerRegistry: '$(acrName)'
+          repository: 'genaidemo-frontend'
+          command: 'buildAndPush'
+          Dockerfile: 'apps/web/Dockerfile'
+          buildContext: '.'
+          tags: |
+            $(Build.BuildId)
+            latest

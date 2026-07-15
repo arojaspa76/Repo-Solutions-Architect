@@ -1,0 +1,44 @@
+# Project:     GenAIDemo
+# Component:   CI/CD pipeline template
+# Description: Build and test the React frontend
+# Owner:       Andrés Felipe Rojas Parra
+# Created:     2026-07
+
+jobs:
+  - job: build_frontend
+    displayName: 'Build Frontend'
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+      - task: NodeTool@0
+        inputs:
+          versionSpec: '20.x'
+
+      - script: |
+          corepack enable
+          pnpm install --frozen-lockfile
+        workingDirectory: apps/web
+        displayName: 'Install dependencies'
+
+      - script: pnpm run test:ci
+        workingDirectory: apps/web
+        displayName: 'Run tests'
+
+      - task: PublishTestResults@2
+        inputs:
+          testResultsFormat: 'JUnit'
+          testResultsFiles: 'apps/web/**/junit.xml'
+        condition: succeededOrFailed()
+
+      - script: pnpm run build
+        workingDirectory: apps/web
+        displayName: 'Build frontend'
+
+      - script: |
+          docker build -t genaidemo-frontend:$(Build.BuildId) -t genaidemo-frontend:latest \
+            -f apps/web/Dockerfile .
+        displayName: 'Docker build frontend'
+
+      - script: echo "##vso[task.setvariable variable=FRONTEND_IMAGE_TAG;isOutput=true]$(Build.BuildId)"
+        name: setFrontendImageTag
+        displayName: 'Set FRONTEND_IMAGE_TAG'

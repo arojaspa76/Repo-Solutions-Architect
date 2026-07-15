@@ -1,0 +1,31 @@
+# Project:     GenAIDemo
+# Component:   Kubernetes Services
+# Description: ClusterIP for backend, LoadBalancer for frontend in genaidemo-dev
+# Owner:       Andrés Felipe Rojas Parra
+# Created:     2026-07
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: genaidemo-backend
+  namespace: genaidemo-dev
+spec:
+  type: ClusterIP
+  selector:
+    app: genaidemo-backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: genaidemo-frontend
+  namespace: genaidemo-dev
+spec:
+  type: LoadBalancer
+  selector:
+    app: genaidemo-frontend
+  ports:
+    - port: 80
+      targetPort: 3000

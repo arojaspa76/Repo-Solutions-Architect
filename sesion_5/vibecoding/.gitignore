@@ -1,0 +1,10 @@
+__pycache__/
+.venv/
+.env
+*.onnx
+*.pt
+*.pth
+data/raw/
+data/processed/
+models/
+artifacts/

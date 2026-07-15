@@ -1,0 +1,45 @@
+# Project:     GenAIDemo
+# Component:   Frontend Kubernetes Deployment
+# Description: React frontend deployment for genaidemo-dev
+# Owner:       Andrés Felipe Rojas Parra
+# Created:     2026-07
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: genaidemo-frontend
+  namespace: genaidemo-dev
+  labels:
+    app: genaidemo-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: genaidemo-frontend
+  template:
+    metadata:
+      labels:
+        app: genaidemo-frontend
+    spec:
+      containers:
+        - name: genaidemo-frontend
+          image: $(ACR_LOGIN_SERVER)/genaidemo-frontend:latest
+          ports:
+            - containerPort: 3000
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: genaidemo-config
+                  key: NEXT_PUBLIC_API_URL

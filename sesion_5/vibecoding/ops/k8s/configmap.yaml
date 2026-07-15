@@ -1,0 +1,18 @@
+# Project:     GenAIDemo
+# Component:   Kubernetes ConfigMap
+# Description: Non-secret environment configuration for genaidemo-dev
+# Owner:       Andrés Felipe Rojas Parra
+# Created:     2026-07
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: genaidemo-config
+  namespace: genaidemo-dev
+data:
+  ENVIRONMENT: "dev"
+  PROJECT_NAME: "GenAIDemo"
+  COSMOS_DB_ENDPOINT: ""
+  REDIS_HOST: ""
+  AZURE_OPENAI_ENDPOINT: ""
+  NEXT_PUBLIC_API_URL: ""

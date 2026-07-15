@@ -1,0 +1,47 @@
+# Project:     GenAIDemo
+# Component:   CI/CD pipeline template
+# Description: Build and test the FastAPI backend
+# Owner:       Andrés Felipe Rojas Parra
+# Created:     2026-07
+
+jobs:
+  - job: build_backend
+    displayName: 'Build Backend'
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+      - task: UsePythonVersion@0
+        inputs:
+          versionSpec: '3.12'
+
+      - script: pip install uv
+        displayName: 'Install uv'
+
+      - script: uv sync --frozen --no-dev
+        displayName: 'Install dependencies'
+
+      - script: |
+          uv run pytest tests/unit \
+            --junitxml=$(Agent.TempDirectory)/test-results.xml \
+            --cov=src --cov-report=xml:$(Agent.TempDirectory)/coverage.xml
+        displayName: 'Run unit tests'
+
+      - task: PublishTestResults@2
+        inputs:
+          testResultsFormat: 'JUnit'
+          testResultsFiles: '$(Agent.TempDirectory)/test-results.xml'
+        condition: succeededOrFailed()
+
+      - task: PublishCodeCoverageResults@2
+        inputs:
+          summaryFileLocation: '$(Agent.TempDirectory)/coverage.xml'
+        condition: succeededOrFailed()
+
+      - script: |
+          docker build -t genaidemo-backend:$(Build.BuildId) -t genaidemo-backend:latest \
+            -f apps/api/Dockerfile .
+        displayName: 'Docker build backend'
+
+      - script: echo "##vso[task.setvariable variable=BACKEND_IMAGE_TAG;isOutput=true]$(Build.BuildId)"
+        name: setBackendImageTag
+        displayName: 'Set BACKEND_IMAGE_TAG'
