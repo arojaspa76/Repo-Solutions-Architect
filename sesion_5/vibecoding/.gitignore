@@ -1,6 +1,8 @@
 __pycache__/
+*.pyc
 .venv/
 .env
+.env.*.local
 *.onnx
 *.pt
 *.pth
@@ -8,3 +10,26 @@ data/raw/
 data/processed/
 models/
 artifacts/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Node / frontend
+node_modules/
+apps/web/dist/
+apps/web/build/
+.next/
+
+# Bicep compiled output
+*.bicep.json
+!ops/bicep/**/*.json
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.ruff*

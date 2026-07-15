@@ -1,7 +1,32 @@
 [project]
-name = "template_project"
+name = "genaidemo"
 version = "0.1.0"
-requires-python = ">=3.12"
+requires-python = "==3.12.10"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.8",
+    "pydantic-settings>=2.4",
+    "semantic-kernel>=1.9",
+    "azure-identity>=1.17",
+    "azure-keyvault-secrets>=4.8",
+    "azure-cosmos>=4.7",
+    "azure-search-documents>=11.5",
+    "azure-mgmt-containerregistry>=10.3",
+    "azure-monitor-opentelemetry>=1.6",
+    "redis>=5.0",
+    "python-jose[cryptography]>=3.3",
+    "msal>=1.30",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.6",
+    "black>=24.8",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+]
 
 [tool.ruff]
 line-length = 100
@@ -11,3 +36,9 @@ line-length = 100
 
 [tool.pytest.ini_options]
 addopts = "-q"
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.coverage.report]
+fail_under = 70
