@@ -21,7 +21,16 @@ Environments:     dev (deploy now) · staging · production (parameterized, not 
 
 ## FOLDER MAP — work exclusively inside this structure
 
+```
 vibecoding/
+├── azure-pipelines.yml             ← CI/CD pipeline (root of repo)
+├── azure-pipelines/
+│   └── templates/
+│       ├── build-backend.yml
+│       ├── build-frontend.yml
+│       ├── push-acr.yml
+│       └── deploy-aks.yml
+├── Makefile                        ← cross-platform (Windows 11 Git Bash + Ubuntu 24.04)
 ├── ops/
 │   ├── bicep/
 │   │   ├── main.bicep              ← orchestrator, targetScope = resourceGroup
@@ -41,22 +50,64 @@ vibecoding/
 │   │   ├── services.yaml
 │   │   ├── configmap.yaml
 │   │   └── secret-provider.yaml
-│   ├── docker/
-│   │   └── (Dockerfiles are in services/ — do not create new ones here)
 │   └── scripts/
 │       ├── init_structure.ps1
 │       ├── deploy.ps1
 │       └── validate_infra.py
-├── azure-pipelines.yml             ← CI/CD pipeline (root of repo)
-├── azure-pipelines/
-│   └── templates/
-│       ├── build-backend.yml
-│       ├── build-frontend.yml
-│       ├── push-acr.yml
-│       └── deploy-aks.yml
+├── docs/
+│   ├── architecture/               ← ADRs, diagrams (Mermaid/draw.io),
+│   │                                  OpenAPI specs, auth flows — timeless docs
+│   └── sprint_0/                   ← Created NOW for Sprint 0
+│       ├── backlog.md
+│       ├── validation.md
+│       └── decisions.md
 └── tests/
     └── integration/
+        ├── conftest.py
         └── test_infra.py
+```
+
+## Documentation convention — apply to every sprint
+
+For every sprint, create a dedicated folder: docs/sprint_{N}/
+where N is the zero-padded sprint number (sprint_0, sprint_1, sprint_2...).
+
+Rules:
+- docs/architecture/  → timeless artifacts: ADRs, system diagrams,
+                         OpenAPI specs, auth flows, data models.
+                         These are NEVER sprint-specific.
+- docs/sprint_{N}/    → everything scoped to that sprint:
+                         backlog, validation reports, sign-off checklists,
+                         meeting notes, spike results, demo scripts.
+
+When starting a new sprint, CREATE the sprint_{N}/ folder as the
+very first action before writing any code. Pre-populate it with:
+  - backlog.md        (sprint goal, PBIs in scope, story points)
+  - validation.md     (empty template: test results table, sign-off checklist)
+  - decisions.md      (empty template: decisions made during the sprint)
+
+Never mix sprint-specific content into docs/architecture/.
+Never put architecture diagrams inside a sprint folder.
+
+---
+
+## CODING STANDARDS — apply to every file you create
+
+- Bicep: use @description(), @minLength, @allowed decorators on every parameter;
+  no inline comments that reveal internal naming conventions or personal data
+- Python: type hints on all functions, docstrings on all test functions,
+  black-compatible formatting (88 char line limit), no bare except clauses
+- YAML: 2-space indent, explicit types where ambiguous, no trailing spaces
+- PowerShell: use approved verbs, -ErrorAction Stop on critical az calls,
+  Write-Host with [INFO] / [OK] / [ERROR] prefixes (no ANSI codes)
+- All files must include a header comment block:
+    # Project:     GenAIDemo
+    # Component:   <component name>
+    # Description: <one line>
+    # Owner:       Andrés Felipe Rojas Parra
+    # Created:     2026-07
+- No hardcoded values anywhere: every environment-specific value must come
+  from a parameter, environment variable, or Key Vault reference
 
 ---
 
@@ -65,27 +116,27 @@ vibecoding/
 ### General rules for ALL Bicep files
 - targetScope = 'resourceGroup' on main.bicep; modules inherit scope
 - Every module receives: name, location, tags, environment parameters
-- Standard tags on every resource:
+- Standard tags object applied to every resource:
     project:     'GenAIDemo'
     environment: <parameter>
     managedBy:   'Bicep'
     owner:       'andres.rojas@techcorp.com'
-- No hardcoded secrets anywhere — use Key Vault references or output chaining
+- No hardcoded secrets — use Key Vault references or output chaining
 - Use @description() decorators on every parameter
 - Use @minLength / @maxLength / @allowed where applicable
-- All resource names follow pattern: {projectName}-{resourceType}-{environment}
-  Example: genaidemo-kv-dev, genaidemo-acr-dev, genaidemo-cosmos-dev
+- All resource names follow the pattern: {projectName}-{resourceType}-{environment}
+  Examples: genaidemo-kv-dev, genaidemo-acr-dev, genaidemo-cosmos-dev
 
 ### main.bicep
 - Accepts parameters: projectName, environment, location, tags (object)
 - Calls each module in dependency order:
     1. Key Vault  (no dependencies)
     2. ACR        (no dependencies)
-    3. Cosmos DB  (stores connection string → Key Vault)
-    4. Redis      (stores access key → Key Vault)
+    3. Cosmos DB  (stores connection string into Key Vault)
+    4. Redis      (stores access key into Key Vault)
     5. AKS        (needs ACR reference for AcrPull role assignment)
-- Passes outputs between modules (e.g. keyVaultName flows into cosmosdb and redis
-  modules so they can write their own secrets)
+- Passes outputs between modules (e.g. keyVaultName flows into cosmosdb
+  and redis modules so they can write their own secrets into Key Vault)
 - Outputs: keyVaultName, acrLoginServer, cosmosDbEndpoint, aksClusterName
 
 ### modules/keyvault.bicep
@@ -106,9 +157,9 @@ vibecoding/
 
 ### modules/cosmosdb.bicep
 - kind: GlobalDocumentDB  (NoSQL API)
-- capability: EnableServerless  (dev only; parameterized to switch to provisioned)
+- capability: EnableServerless for dev (parameterized to switch to provisioned)
 - consistencyPolicy: Session
-- locations: single region for dev (parameter)
+- locations: single region for dev (parameter-driven)
 - Database name:  genaidemo-db
 - Container name: conversations
   - partitionKey: /user_id
@@ -125,7 +176,8 @@ vibecoding/
 - redisVersion: '6'
 - After creation, store the primary access key as a Key Vault secret:
     secret name: REDIS-ACCESS-KEY
-- Also store the host:port as secret: REDIS-HOST
+- Also store the hostname as a Key Vault secret:
+    secret name: REDIS-HOST
 - Output: redisHostName, redisSslPort
 
 ### modules/aks.bicep
@@ -133,68 +185,90 @@ vibecoding/
 - Default node pool: Standard_D2s_v3, nodeCount: 2 for dev
 - enableAutoScaling: true, minCount: 2, maxCount: 5
 - networkPlugin: azure
-- managedIdentity: SystemAssigned
-- Addons: azureKeyvaultSecretsProvider (enable secret rotation)
-- After creation, assign AcrPull role to AKS kubelet identity on the ACR resource
+- identity: SystemAssigned (managed identity)
+- Addons: azureKeyvaultSecretsProvider with enableSecretRotation: true
+- After creation, assign AcrPull role to the AKS kubelet identity on the ACR resource
 - Output: aksClusterName, aksOidcIssuerUrl, aksManagedIdentityPrincipalId
 
 ### parameters/dev.bicepparam
 - All values for the dev environment
-- NO secrets — reference Key Vault where needed
+- NO secrets — only non-sensitive configuration values
 - location: 'eastus2'
+- environment: 'dev'
+- Appropriate SKUs: Redis C1, AKS 2 nodes Standard_D2s_v3
 
-### parameters/staging.bicepparam  
+### parameters/staging.bicepparam
 - Same structure as dev, different values
 - location: 'eastus2'
-- Larger SKUs where relevant (e.g. Redis C2, AKS 3 nodes)
+- environment: 'staging'
+- Larger SKUs: Redis C2, AKS 3 nodes Standard_D4s_v3
 
 ---
 
 ## DELIVERABLE 2 — Azure DevOps CI/CD Pipeline
 
 ### azure-pipelines.yml  (root of repo)
-- trigger: branches include [develop, main]; paths exclude [docs/**, '*.md']
-- pr: trigger on PRs to develop and main
+- trigger:
+    branches: include [develop, main]
+    paths:    exclude [docs/**, '*.md', '*.txt']
+- pr:
+    branches: include [develop, main]
+    paths:    exclude [docs/**, '*.md', '*.txt']
 - variables:
-    - group: genaidemo-kv-dev   (linked to Key Vault via Library)
-    - name/value pairs for non-secret config (ACR name, AKS cluster name, etc.)
+    - group: genaidemo-kv-dev   (linked to Key Vault via Library — comment explains setup)
+    - name/value pairs for non-secret config:
+        ACR_NAME, AKS_CLUSTER_NAME, RESOURCE_GROUP, LOCATION, ENVIRONMENT
 - stages in order:
-    1. validate   — az bicep lint + az deployment group what-if (dry run)
-    2. build      — backend and frontend in parallel jobs
-    3. push       — push images to ACR (only on develop/main, not PRs)
-    4. deploy     — deploy to AKS dev (only on develop/main, not PRs)
+    1. validate   — az bicep lint on main.bicep +
+                    az deployment group what-if (dry run, non-blocking warning on failure)
+    2. build      — backend and frontend as parallel jobs using templates
+    3. push       — push images to ACR
+                    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+    4. deploy     — deploy to AKS dev
+                    condition: and(succeeded(), eq(variables['Build.SourceBranchName'], 'develop'))
 
 ### azure-pipelines/templates/build-backend.yml
+- parameters: imageTag (string), acrName (string)
 - Python 3.12 via UsePythonVersion task
-- Install uv: pip install uv
+- pip install uv
 - uv sync --frozen --no-dev
-- Run: pytest tests/unit --junitxml=$(Agent.TempDirectory)/test-results.xml
-              --cov=src --cov-report=xml:$(Agent.TempDirectory)/coverage.xml
-- PublishTestResults task
-- PublishCodeCoverageResults task
-- docker build with tag $(Build.BuildId) and latest
-- Output variable: BACKEND_IMAGE_TAG = $(Build.BuildId)
+- pytest tests/unit --junitxml=$(Agent.TempDirectory)/backend-test-results.xml
+         --cov=src --cov-report=xml:$(Agent.TempDirectory)/backend-coverage.xml
+- PublishTestResults: testResultsFormat JUnit, searchFolder Agent.TempDirectory
+- PublishCodeCoverageResults: codecoverageTool Cobertura
+- docker build -t $(acrName).azurecr.io/genaidemo-backend:$(imageTag) .
+  using services/backend/Dockerfile
+- Output variable: BACKEND_IMAGE = $(acrName).azurecr.io/genaidemo-backend:$(imageTag)
 
 ### azure-pipelines/templates/build-frontend.yml
-- Node 20 via NodeTool task
+- parameters: imageTag (string), acrName (string)
+- NodeTool: 20
 - corepack enable && pnpm install --frozen-lockfile
-- pnpm run test:ci   (publishes JUnit results)
+- pnpm run test:ci  (expects JUnit output to $(Agent.TempDirectory)/frontend-test-results.xml)
+- PublishTestResults
 - pnpm run build
-- docker build with tag $(Build.BuildId) and latest
-- Output variable: FRONTEND_IMAGE_TAG = $(Build.BuildId)
+- docker build -t $(acrName).azurecr.io/genaidemo-frontend:$(imageTag) .
+  using services/frontend/Dockerfile
+- Output variable: FRONTEND_IMAGE = $(acrName).azurecr.io/genaidemo-frontend:$(imageTag)
 
 ### azure-pipelines/templates/push-acr.yml
-- Condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
-- Docker@2 task: buildAndPush for genaidemo-backend
-- Docker@2 task: buildAndPush for genaidemo-frontend
-- Both images tagged: $(Build.BuildId) AND latest
+- parameters: imageTag (string), acrName (string)
+- az acr login --name $(acrName)
+- Docker@2 task: push genaidemo-backend with tags $(imageTag) and latest
+- Docker@2 task: push genaidemo-frontend with tags $(imageTag) and latest
 
 ### azure-pipelines/templates/deploy-aks.yml
-- Condition: and(succeeded(), eq(variables['Build.SourceBranchName'], 'develop'))
-- Use KubernetesManifest@1 task for each manifest in ops/k8s/
-- Apply in order: namespace → configmap → secret-provider → deployments → services
-- After deploy: run smoke test (curl /api/health on the backend ClusterIP via kubectl exec)
-- If smoke test fails: kubectl rollout undo for both deployments
+- parameters: environment (string), resourceGroup (string), aksClusterName (string)
+- az aks get-credentials --resource-group $(resourceGroup) --name $(aksClusterName)
+- KubernetesManifest@1: deploy namespace.yaml
+- KubernetesManifest@1: deploy configmap.yaml
+- KubernetesManifest@1: deploy secret-provider.yaml
+- KubernetesManifest@1: deploy backend-deployment.yaml and frontend-deployment.yaml
+- KubernetesManifest@1: deploy services.yaml
+- Smoke test step: kubectl exec a backend pod and curl http://localhost:8000/api/health
+  if exit code != 0: kubectl rollout undo deployment/genaidemo-backend -n genaidemo-$(environment)
+                      kubectl rollout undo deployment/genaidemo-frontend -n genaidemo-$(environment)
+                      then fail the stage
 
 ---
 
@@ -202,161 +276,465 @@ vibecoding/
 
 ### namespace.yaml
 - name: genaidemo-dev
-- labels: project=genaidemo, environment=dev
+- labels: project=genaidemo, environment=dev, managed-by=bicep
 
 ### configmap.yaml
 - namespace: genaidemo-dev
-- Non-secret environment variables:
-    ENVIRONMENT, PROJECT_NAME, COSMOS_DB_ENDPOINT,
-    REDIS_HOST (reference — actual value from secret-provider),
-    AZURE_OPENAI_ENDPOINT (placeholder, to be filled)
+- name: genaidemo-config
+- data:
+    ENVIRONMENT: "dev"
+    PROJECT_NAME: "genaidemo"
+    AZURE_OPENAI_ENDPOINT: "https://placeholder.openai.azure.com/"
+    NEXT_PUBLIC_API_URL: "http://genaidemo-backend:8000"
 
 ### secret-provider.yaml
-- SecretProviderClass for Azure Key Vault CSI driver
-- keyvaultName: read from pipeline variable $(KEY_VAULT_NAME)
-- Secrets to mount:
-    COSMOS-DB-CONNECTION-STRING  → env var COSMOS_DB_CONNECTION_STRING
-    REDIS-ACCESS-KEY             → env var REDIS_ACCESS_KEY
-    AZURE-AD-CLIENT-ID           → env var AZURE_AD_CLIENT_ID
-    AZURE-AD-CLIENT-SECRET       → env var AZURE_AD_CLIENT_SECRET
-    AZURE-AD-TENANT-ID           → env var AZURE_AD_TENANT_ID
-    AZURE-OPENAI-KEY             → env var AZURE_OPENAI_KEY
-- tenantId: read from pipeline variable $(AZURE_TENANT_ID)
-- userAssignedIdentityID: AKS kubelet managed identity
+- apiVersion: secrets-store.csi.x-k8s.io/v1
+- kind: SecretProviderClass
+- namespace: genaidemo-dev
+- name: genaidemo-kv-secrets
+- spec.provider: azure
+- parameters:
+    usePodIdentity: "false"
+    useVMManagedIdentity: "true"
+    userAssignedIdentityID: ""    ← comment: replace with AKS kubelet managed identity client ID
+    keyvaultName: ""              ← comment: replace with Key Vault name from Bicep output
+    tenantId: ""                  ← comment: replace with Azure tenant ID
+    objects: |
+      array:
+        - |
+          objectName: COSMOS-DB-CONNECTION-STRING
+          objectType: secret
+        - |
+          objectName: REDIS-ACCESS-KEY
+          objectType: secret
+        - |
+          objectName: REDIS-HOST
+          objectType: secret
+        - |
+          objectName: AZURE-AD-CLIENT-ID
+          objectType: secret
+        - |
+          objectName: AZURE-AD-CLIENT-SECRET
+          objectType: secret
+        - |
+          objectName: AZURE-AD-TENANT-ID
+          objectType: secret
+        - |
+          objectName: AZURE-OPENAI-KEY
+          objectType: secret
+- secretObjects:
+    - secretName: genaidemo-secrets
+      type: Opaque
+      data mapping for each objectName → data key (camelCase env var name)
 
 ### backend-deployment.yaml
 - namespace: genaidemo-dev
 - replicas: 2
-- image: $(ACR_LOGIN_SERVER)/genaidemo-backend:latest
-  (will be substituted by KubernetesManifest imageSubstitution)
-- resources: requests cpu=250m mem=512Mi / limits cpu=1000m mem=1Gi
-- readinessProbe: GET /api/health, initialDelaySeconds=15, periodSeconds=10
-- livenessProbe:  GET /api/health, initialDelaySeconds=30, periodSeconds=30
-- envFrom: secretRef from secret-provider + configMapRef
-- volumeMounts: CSI volume from SecretProviderClass
+- selector: app=genaidemo-backend
+- image: REPLACE_WITH_ACR_LOGIN_SERVER/genaidemo-backend:latest
+  (KubernetesManifest imageSubstitution will replace this)
+- resources:
+    requests: cpu=250m, memory=512Mi
+    limits:   cpu=1000m, memory=1Gi
+- readinessProbe: httpGet /api/health port 8000
+    initialDelaySeconds: 15, periodSeconds: 10, failureThreshold: 3
+- livenessProbe: httpGet /api/health port 8000
+    initialDelaySeconds: 30, periodSeconds: 30, failureThreshold: 3
+- envFrom:
+    - secretRef: genaidemo-secrets
+    - configMapRef: genaidemo-config
+- volumes: CSI volume referencing SecretProviderClass genaidemo-kv-secrets
+- volumeMounts: /mnt/secrets-store readonly
 
 ### frontend-deployment.yaml
 - namespace: genaidemo-dev
 - replicas: 2
-- image: $(ACR_LOGIN_SERVER)/genaidemo-frontend:latest
-- resources: requests cpu=100m mem=256Mi / limits cpu=500m mem=512Mi
-- readinessProbe: GET /, port 3000
-- env: NEXT_PUBLIC_API_URL from configmap
+- selector: app=genaidemo-frontend
+- image: REPLACE_WITH_ACR_LOGIN_SERVER/genaidemo-frontend:latest
+- resources:
+    requests: cpu=100m, memory=256Mi
+    limits:   cpu=500m, memory=512Mi
+- readinessProbe: httpGet / port 3000
+    initialDelaySeconds: 10, periodSeconds: 10
+- livenessProbe: httpGet / port 3000
+    initialDelaySeconds: 20, periodSeconds: 30
+- env:
+    - name: NEXT_PUBLIC_API_URL
+      valueFrom: configMapKeyRef genaidemo-config NEXT_PUBLIC_API_URL
 
 ### services.yaml
-- backend:  ClusterIP, port 8000 → targetPort 8000
-- frontend: LoadBalancer, port 80 → targetPort 3000
+- Service genaidemo-backend:
+    type: ClusterIP
+    port: 8000, targetPort: 8000
+    selector: app=genaidemo-backend
+- Service genaidemo-frontend:
+    type: LoadBalancer
+    port: 80, targetPort: 3000
+    selector: app=genaidemo-frontend
 
 ---
 
-## DELIVERABLE 4 — Infrastructure Validation Tests  (tests/integration/test_infra.py)
+## DELIVERABLE 4 — Infrastructure Validation Tests
 
-Use pytest. All credentials come from environment variables (never hardcoded).
-Required env vars: KEY_VAULT_NAME, AZURE_TENANT_ID, AZURE_CLIENT_ID,
-                   AZURE_CLIENT_SECRET, COSMOS_DB_ENDPOINT, REDIS_HOST,
-                   REDIS_SSL_PORT, ACR_NAME, RESOURCE_GROUP
+### tests/integration/conftest.py
+- session-scoped fixture: azure_credential() → DefaultAzureCredential
+- session-scoped fixture: secret_client(azure_credential) → SecretClient
+  reads KEY_VAULT_URI from env var (fail fast with clear message if missing)
+- session-scoped fixture: cosmos_client(secret_client) → CosmosClient
+  reads connection string from Key Vault secret COSMOS-DB-CONNECTION-STRING
+- function-scoped fixture: conversations_container(cosmos_client)
+  returns the container client for database=genaidemo-db, container=conversations
+- Required env vars (assert at session start with clear error messages):
+    KEY_VAULT_URI, AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET,
+    COSMOS_DB_ENDPOINT, REDIS_SSL_PORT, ACR_NAME, RESOURCE_GROUP
 
-Write these test functions:
+### tests/integration/test_infra.py
+Use pytest. All credentials from fixtures in conftest.py. Never hardcode values.
+Write these test functions with full docstrings:
 
-1. test_keyvault_reachable()
-   - Connect with DefaultAzureCredential
-   - List secrets (just first page) — assert no exception
-   - Assert COSMOS-DB-CONNECTION-STRING exists
+1. test_keyvault_reachable(secret_client)
+   """Verify Key Vault is accessible and the CSI secrets exist."""
+   - List secrets properties (first page only)
+   - Assert no exception is raised
+   - Assert COSMOS-DB-CONNECTION-STRING exists in the list
 
-2. test_cosmosdb_crud()
-   - Read connection string from Key Vault
-   - CosmosClient: create item in conversations container
-     item = {"id": "test-infra-001", "user_id": "infra-test", "content": "ping"}
-   - Read it back, assert id matches
-   - Delete it
-   - Assert deletion (404 on subsequent read)
+2. test_keyvault_secrets_complete(secret_client)
+   """Verify all required secrets are present in Key Vault."""
+   - Check each of these secret names exists (get_secret by name):
+       COSMOS-DB-CONNECTION-STRING, REDIS-ACCESS-KEY, REDIS-HOST,
+       AZURE-AD-CLIENT-ID, AZURE-AD-CLIENT-SECRET, AZURE-AD-TENANT-ID,
+       AZURE-OPENAI-KEY
+   - Collect all missing secrets and fail with a clear list if any are missing
 
-3. test_redis_connectivity()
-   - Read REDIS-ACCESS-KEY from Key Vault
-   - redis.StrictRedis with ssl=True
-   - SET infra-test-key "hello-genaidemo"
-   - GET infra-test-key → assert == "hello-genaidemo"
-   - DELETE infra-test-key
+3. test_cosmosdb_crud(conversations_container)
+   """Verify Cosmos DB CRUD operations on the conversations container."""
+   - Create item: {"id": "infra-test-001", "user_id": "infra-test",
+                   "content": "ping", "timestamp": <ISO 8601 now>}
+   - Read it back: assert item["id"] == "infra-test-001"
+   - Delete it: conversations_container.delete_item("infra-test-001",
+                                                    partition_key="infra-test")
+   - Confirm deletion: read again, expect CosmosResourceNotFoundError
 
-4. test_acr_image_pullable()
-   - Use azure-mgmt-containerregistry with DefaultAzureCredential
-   - List repositories in ACR_NAME
-   - This test PASSES even if the list is empty (ACR exists and is reachable)
-   - Assert no AuthenticationError
+4. test_redis_connectivity(secret_client)
+   """Verify Redis TLS connectivity and basic SET/GET/DEL operations."""
+   - Read REDIS-ACCESS-KEY and REDIS-HOST from Key Vault
+   - Connect: redis.StrictRedis(host, port=int(REDIS_SSL_PORT),
+                                password=access_key, ssl=True,
+                                ssl_cert_reqs=None, decode_responses=True)
+   - SET "infra-test-key" "hello-genaidemo"
+   - GET "infra-test-key" → assert == "hello-genaidemo"
+   - DEL "infra-test-key"
+   - Assert key no longer exists (GET returns None)
 
-5. test_keyvault_secrets_complete()
-   - Assert ALL of the following secrets exist in Key Vault:
-     COSMOS-DB-CONNECTION-STRING, REDIS-ACCESS-KEY, REDIS-HOST,
-     AZURE-AD-CLIENT-ID, AZURE-AD-CLIENT-SECRET, AZURE-AD-TENANT-ID,
-     AZURE-OPENAI-KEY
-
-Add a pytest fixture: azure_credential() using DefaultAzureCredential.
-Add a conftest.py with session-scoped fixture for SecretClient.
+5. test_acr_reachable(azure_credential)
+   """Verify ACR exists and is reachable via management API."""
+   - Use ContainerRegistryManagementClient with DefaultAzureCredential
+   - Read ACR_NAME and RESOURCE_GROUP from env vars
+   - Call registries.get(resource_group, acr_name)
+   - Assert registry.provisioning_state == 'Succeeded'
+   - This test PASSES even if no images exist yet
 
 ---
 
 ## DELIVERABLE 5 — Helper Scripts  (ops/scripts/)
 
-### deploy.ps1
-PowerShell script to deploy Bicep to Azure. Must:
-- Accept parameters: -Environment (dev|staging), -ResourceGroup, -Location
-- Login check: az account show (fail fast if not logged in)
+### ops/scripts/deploy.ps1
+PowerShell deployment script. Requirements:
+- Parameters: -Environment (Mandatory, ValidateSet dev,staging),
+              -ResourceGroup (Mandatory),
+              -Location (default 'eastus2')
+- Header comment block with project metadata
+- Login check: az account show --output none 2>&1
+  if exit code != 0: Write-Error "Not logged in. Run: az login" and exit 1
+- Show subscription info before deploying (az account show --output table)
+- Deployment name: "genaidemo-$Environment-$(Get-Date -Format 'yyyyMMddHHmm')"
 - Run: az deployment group create
          --resource-group $ResourceGroup
          --template-file ops/bicep/main.bicep
          --parameters ops/bicep/parameters/$Environment.bicepparam
-         --name "genaidemo-$Environment-$(Get-Date -Format 'yyyyMMdd-HHmm')"
-- After deployment: print all outputs in a formatted table
-- Capture exit code and report PASS / FAIL clearly
+         --name $DeploymentName
+         --output json
+- On success: parse JSON output and print all outputs as a formatted table
+  using Format-Table
+- On failure: print [ERROR] Deployment failed. Check Azure Portal for details.
+  and exit 1
+- Execution time: measure with Measure-Command and print at the end
 
-### validate_infra.py
-Python script (not pytest) that runs all integration tests and outputs
-a Markdown-formatted report to docs/architecture/sprint0-validation.md
-with columns: Test Name | Status | Duration | Notes
+### ops/scripts/validate_infra.py
+Python script (not pytest) that:
+- Runs all integration tests via subprocess calling pytest with --json-report
+- Parses the JSON report
+- Generates docs/sprint_0/validation.md with:
+    # Sprint 0 — Validation Report
+    Generated: <timestamp>
+    Environment: <from ENV var or 'dev'>
+
+    ## Test Results
+    | Test Name | Status | Duration (s) | Notes |
+    |-----------|--------|--------------|-------|
+    | ...       | PASS   | 1.23         |       |
+
+    ## Sign-off Checklist
+    - [ ] All resources in Succeeded state in Azure Portal
+    - [ ] All integration tests PASS
+    - [ ] Pipeline CI/CD executed end-to-end without errors
+    - [ ] Entra ID login validated from web app
+    - [ ] Key Vault secrets populated
+    - [ ] Tech Lead sign-off: _________________________ Date: _______
+- Prints PASS / FAIL summary to stdout with counts
+- Exit code 0 if all tests pass, 1 otherwise
+
+### ops/scripts/init_structure.ps1
+PowerShell script that:
+- Header comment block
+- Creates every folder in the vibecoding structure using New-Item -ItemType Directory -Force
+  (idempotent — -Force does not fail if folder exists)
+- Creates .gitkeep in each leaf folder using New-Item -ItemType File -Force
+- Counts: how many folders were already existing vs newly created
+- Prints a summary table: Folder | Status (Created / Already existed)
+- At the end: [OK] Structure initialized. X new folders created, Y already existed.
 
 ---
 
-## DELIVERABLE 6 — Repository Initialization Script  (ops/scripts/init_structure.ps1)
+## DELIVERABLE 6 — Sprint 0 Documentation  (docs/sprint_0/)
 
-PowerShell script that creates every folder in the vibecoding structure
-with a .gitkeep placeholder. Must be idempotent (re-running does not fail
-if folders already exist). Print a summary of created vs already-existing folders.
+### docs/sprint_0/backlog.md
+```markdown
+# Sprint 0 — Backlog
+
+**Sprint Goal:** Provision the complete Azure base infrastructure for GenAIDemo
+so that subsequent sprints can deploy application code immediately.
+
+**Duration:** 2 weeks  
+**Story Points:** 37 (34 Must Have · 3 Should Have)  
+**Engineer:** Andrés Felipe Rojas Parra
+
+## PBIs in Scope
+
+| ID      | Title                                    | Points | Priority    |
+|---------|------------------------------------------|--------|-------------|
+| PBI-001 | Bicep scaffold (ops/bicep/ structure)    | 3      | Must Have   |
+| PBI-002 | Azure Key Vault                          | 3      | Must Have   |
+| PBI-003 | Azure Container Registry                 | 2      | Must Have   |
+| PBI-004 | Azure Cosmos DB                          | 5      | Must Have   |
+| PBI-005 | Azure Cache for Redis                    | 3      | Should Have |
+| PBI-006 | Entra ID App Registration                | 5      | Must Have   |
+| PBI-007 | CI Pipeline (azure-pipelines.yml)        | 5      | Must Have   |
+| PBI-008 | CD Pipeline (AKS deploy)                 | 5      | Must Have   |
+| PBI-009 | Repo structure (vibecoding)              | 3      | Must Have   |
+| PBI-010 | Infra validation tests + sign-off        | 3      | Must Have   |
+```
+
+### docs/sprint_0/validation.md
+```markdown
+# Sprint 0 — Validation & Sign-off
+
+**Environment:** dev  
+**Date:** _____________  
+**Engineer:** Andrés Felipe Rojas Parra
+
+## Integration Test Results
+
+| Test Name                      | Status | Duration (s) | Notes |
+|--------------------------------|--------|--------------|-------|
+| test_keyvault_reachable        |        |              |       |
+| test_keyvault_secrets_complete |        |              |       |
+| test_cosmosdb_crud             |        |              |       |
+| test_redis_connectivity        |        |              |       |
+| test_acr_reachable             |        |              |       |
+
+## Azure Resources Checklist
+
+- [ ] genaidemo-kv-dev       — Key Vault          — Succeeded
+- [ ] genaidemo-acr-dev      — Container Registry — Succeeded
+- [ ] genaidemo-cosmos-dev   — Cosmos DB          — Succeeded
+- [ ] genaidemo-redis-dev    — Redis Cache        — Succeeded
+- [ ] genaidemo-aks-dev      — AKS Cluster        — Succeeded
+
+## Pipeline Checklist
+
+- [ ] Stage: validate — PASS
+- [ ] Stage: build    — PASS
+- [ ] Stage: push     — PASS
+- [ ] Stage: deploy   — PASS
+- [ ] Pods Running in namespace genaidemo-dev
+
+## Sign-off
+
+Tech Lead: _________________________ Date: _______
+```
+
+### docs/sprint_0/decisions.md
+```markdown
+# Sprint 0 — Decisions & Notes
+
+## ADR-001: Cosmos DB Serverless for dev environment
+**Date:** 2026-07  
+**Status:** Accepted  
+**Decision:** Use EnableServerless capability for the dev Cosmos DB account.  
+**Rationale:** Zero cost when idle; dev workloads are intermittent.  
+**Consequence:** Serverless cannot be combined with multi-region writes.
+Switch to provisioned throughput (400 RU/s auto-scale) for staging/prod.
+
+## ADR-002: Key Vault RBAC authorization model
+**Date:** 2026-07  
+**Status:** Accepted  
+**Decision:** enableRbacAuthorization: true on Key Vault (no legacy access policies).  
+**Rationale:** RBAC is the current Microsoft recommended approach; provides
+audit trail via Azure Activity Log; integrates with PIM for just-in-time access.  
+**Consequence:** All access must be granted via role assignments
+(Key Vault Secrets Officer / User), not access policy entries.
+
+## Sprint Notes
+
+<!-- Add meeting notes, blockers, and decisions made during Sprint 0 here -->
+```
 
 ---
 
-## CODING STANDARDS — apply to every file you create
+## DELIVERABLE 7 — Makefile (cross-platform: Windows 11 Git Bash + Ubuntu 24.04)
 
-- Bicep: use @description(), @minLength, @allowed decorators; no inline comments
-  that reveal internal naming conventions or personal data
-- Python: type hints on all functions, docstrings on all test functions,
-  black-compatible formatting, no bare except clauses
-- YAML: 2-space indent, explicit types where ambiguous, no trailing spaces
-- All files must have a header comment block:
-    # Project:     GenAIDemo
-    # Component:   <component name>
-    # Description: <one line>
-    # Owner:       Andrés Felipe Rojas Parra
-    # Created:     2026-07
-- No hardcoded values: every environment-specific value must come from
-  a parameter, environment variable, or Key Vault reference
+### Critical cross-platform rules — violations will break Windows Git Bash
+- Use echo "" instead of echo. (echo. is cmd.exe only and fails in sh.exe)
+- Use forward slashes in ALL paths (ops/bicep/main.bicep, never ops\bicep)
+- Use mkdir -p (never md or mkdir without -p)
+- Use rm -rf (never del or rmdir /s)
+- NEVER use ANSI escape codes (\033[...) — use plain text prefixes:
+  [INFO], [OK], [ERROR], [WARN]
+- Use $(shell ...) for command substitution, never backticks
+- Use ifeq ($(OS),Windows_NT) only when strictly necessary;
+  prefer portable sh commands over OS branches
+- Do NOT use .ONESHELL — behavior differs across make versions on Windows
+- Each recipe line is a separate shell invocation;
+  use && to chain commands that must share state within one line
+- Quote paths that may contain spaces: "$(BICEP_MAIN)"
+
+### Variables block
+```makefile
+PROJECT      := genaidemo
+ENV          ?= dev
+RG           ?= rg-$(PROJECT)-$(ENV)
+LOCATION     ?= eastus2
+BICEP_MAIN   := ops/bicep/main.bicep
+PARAMS       := ops/bicep/parameters/$(ENV).bicepparam
+ACR_NAME     := $(PROJECT)acr$(ENV)
+BACKEND_IMG  := $(ACR_NAME).azurecr.io/$(PROJECT)-backend
+FRONTEND_IMG := $(ACR_NAME).azurecr.io/$(PROJECT)-frontend
+PYTHON       := python
+PYTEST       := pytest
+SPRINT       ?=
+```
+
+### Required targets with exact descriptions for help output
+
+```
+help           Show all available targets and their descriptions
+infra-lint     Run az bicep lint on main.bicep
+infra-whatif   Dry-run Bicep deployment (az deployment group what-if)
+infra-deploy   Deploy Bicep to Azure  (usage: make infra-deploy ENV=dev RG=rg-genaidemo-dev)
+infra-destroy  DESTRUCTIVE: delete the resource group after confirmation prompt
+docker-build   Build backend and frontend Docker images locally
+docker-push    Login to ACR and push both images  (usage: make docker-push ENV=dev)
+k8s-deploy     Apply all Kubernetes manifests in ops/k8s/ in correct order
+k8s-status     Show pods, services, and configmaps in genaidemo-$(ENV) namespace
+test-unit      Run tests/unit/ with pytest
+test-infra     Run tests/integration/test_infra.py with pytest
+test-all       Run test-unit then test-infra sequentially
+pipeline-lint  Validate azure-pipelines.yml (requires az devops extension)
+init           Initialize folder structure via ops/scripts/init_structure.ps1
+docs-sprint    Create docs/sprint_$(SPRINT)/ with standard templates
+               usage: make docs-sprint SPRINT=1
+clean          Remove __pycache__, .pytest_cache, *.pyc, dist/, .next/
+format         Run ruff format on src/ and tests/
+lint           Run ruff check on src/ and tests/
+```
+
+### Special rules for docs-sprint target
+- If SPRINT is not set: print [ERROR] SPRINT is required. Usage: make docs-sprint SPRINT=1
+  and exit with code 1
+- mkdir -p docs/sprint_$(SPRINT)
+- For each of the three template files, use a shell guard to avoid overwriting:
+    test -f docs/sprint_$(SPRINT)/backlog.md || echo "# Sprint $(SPRINT) — Backlog" > docs/sprint_$(SPRINT)/backlog.md
+    test -f docs/sprint_$(SPRINT)/validation.md || echo "# Sprint $(SPRINT) — Validation & Sign-off" > docs/sprint_$(SPRINT)/validation.md
+    test -f docs/sprint_$(SPRINT)/decisions.md || echo "# Sprint $(SPRINT) — Decisions & Notes" > docs/sprint_$(SPRINT)/decisions.md
+- Print [OK] docs/sprint_$(SPRINT)/ ready with standard templates
+
+### infra-destroy target
+- Print [WARN] This will DELETE resource group $(RG) and ALL resources inside it.
+- Prompt for confirmation: read -p "Type the resource group name to confirm: " confirm
+- Compare: if [ "$$confirm" != "$(RG)" ]; then echo "[ERROR] Aborted."; exit 1; fi
+- Run: az group delete --name $(RG) --yes --no-wait
+- Print [INFO] Deletion initiated. Monitor in Azure Portal.
+
+### .PHONY declaration
+Declare ALL targets as .PHONY (one line listing all target names).
+
+### help target implementation
+Parse ## comments from the Makefile itself using this portable pattern:
+```makefile
+help:
+	@grep -E "^[a-zA-Z_-]+:.*?## .*$$" $(MAKEFILE_LIST) | \
+	  awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
+```
+Every target must have an inline ## comment on the same line as the target definition.
 
 ---
 
-## IMPORTANT NOTES FOR BICEP
+## START INSTRUCTIONS — execute in this exact order
 
-I will provide you with the exact Bicep content for each module file before
-you write it. Wait for me to paste each module spec before generating it.
-For all other files (YAML, Python, PowerShell), generate them immediately
-following the specifications above.
+1. Create docs/sprint_0/ and populate backlog.md, validation.md, decisions.md
+   with the content specified in Deliverable 6.
 
-Start by:
-1. Creating the full folder structure (all files as empty stubs with header comments)
-2. Generating azure-pipelines.yml and all pipeline templates
-3. Generating all Kubernetes manifests
-4. Generating tests/integration/test_infra.py and conftest.py
-5. Generating ops/scripts/deploy.ps1 and validate_infra.py
-6. Generating ops/scripts/init_structure.ps1
-7. WAITING for me to provide Bicep module specs before writing any .bicep file
+2. Create ALL other files as stubs (header comment block only) so the
+   full folder structure is visible from the start.
 
-After completing steps 1–6, print a checklist of all files created
-and confirm you are ready to receive the Bicep specifications.
+3. Generate azure-pipelines.yml and all four pipeline templates in full.
+
+4. Generate all six Kubernetes manifests in ops/k8s/ in full.
+
+5. Generate tests/integration/conftest.py and test_infra.py in full.
+
+6. Generate ops/scripts/deploy.ps1, validate_infra.py,
+   and init_structure.ps1 in full.
+
+7. Generate the Makefile in full with all targets and cross-platform rules.
+
+8. STOP before writing any content into the five .bicep files.
+   Print the following checklist and wait:
+
+---
+[READY] All non-Bicep files generated. Awaiting Bicep module specifications.
+
+Files created:
+[ ] azure-pipelines.yml
+[ ] azure-pipelines/templates/build-backend.yml
+[ ] azure-pipelines/templates/build-frontend.yml
+[ ] azure-pipelines/templates/push-acr.yml
+[ ] azure-pipelines/templates/deploy-aks.yml
+[ ] Makefile
+[ ] ops/k8s/namespace.yaml
+[ ] ops/k8s/configmap.yaml
+[ ] ops/k8s/secret-provider.yaml
+[ ] ops/k8s/backend-deployment.yaml
+[ ] ops/k8s/frontend-deployment.yaml
+[ ] ops/k8s/services.yaml
+[ ] ops/bicep/main.bicep                ← STUB only, awaiting your spec
+[ ] ops/bicep/modules/keyvault.bicep    ← STUB only, awaiting your spec
+[ ] ops/bicep/modules/acr.bicep         ← STUB only, awaiting your spec
+[ ] ops/bicep/modules/cosmosdb.bicep    ← STUB only, awaiting your spec
+[ ] ops/bicep/modules/redis.bicep       ← STUB only, awaiting your spec
+[ ] ops/bicep/modules/aks.bicep         ← STUB only, awaiting your spec
+[ ] ops/bicep/parameters/dev.bicepparam ← STUB only, awaiting your spec
+[ ] ops/bicep/parameters/staging.bicepparam ← STUB only, awaiting your spec
+[ ] ops/scripts/deploy.ps1
+[ ] ops/scripts/validate_infra.py
+[ ] ops/scripts/init_structure.ps1
+[ ] tests/integration/conftest.py
+[ ] tests/integration/test_infra.py
+[ ] docs/sprint_0/backlog.md
+[ ] docs/sprint_0/validation.md
+[ ] docs/sprint_0/decisions.md
+
+Please provide the Bicep specification for each module.
+Start with: main.bicep
+---

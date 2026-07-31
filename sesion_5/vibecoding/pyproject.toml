@@ -7,7 +7,7 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "pydantic>=2.8",
     "pydantic-settings>=2.4",
-    "semantic-kernel>=1.9",
+    "semantic-kernel>=1.11",
     "azure-identity>=1.17",
     "azure-keyvault-secrets>=4.8",
     "azure-cosmos>=4.7",
@@ -17,6 +17,11 @@ dependencies = [
     "redis>=5.0",
     "python-jose[cryptography]>=3.3",
     "msal>=1.30",
+    "fastapi-azure-auth>=5.0",
+    "tiktoken>=0.8",
+    "structlog>=24.4",
+    "python-multipart>=0.0.12",
+    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]
@@ -26,6 +31,8 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=5.0",
+    "respx>=0.21",
+    "pytest-mock>=3.14",
 ]
 
 [tool.ruff]
@@ -36,9 +43,11 @@ line-length = 100
 
 [tool.pytest.ini_options]
 addopts = "-q"
+pythonpath = ["."]
+asyncio_mode = "auto"
 
 [tool.coverage.run]
-source = ["src"]
+source = ["src", "apps/api/src"]
 
 [tool.coverage.report]
 fail_under = 70

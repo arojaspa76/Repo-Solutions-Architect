@@ -23,6 +23,7 @@ with a single command per environment.
 - PBI-07: Full Bicep implementation (main.bicep + keyvault/acr/cosmosdb/redis/aks modules, dev/staging params) authored by Claude per initial_prompt.md spec — 2026-07-14
 - PBI-08: .env and .env.example created for local dev configuration — 2026-07-14
 - PBI-09: pyproject.toml populated with GenAIDemo dependencies (FastAPI, Semantic Kernel, Azure SDKs, 70% coverage gate) and .gitignore extended for coverage/node/bicep-json/IDE artifacts — 2026-07-14
+- PBI-10: Closed gap vs. initial_prompt.md Deliverables 6/7 — added missing docs/sprint_0/backlog.md, validation.md, decisions.md templates and root Makefile (all 17 targets); fixed help-target regex to include digits so k8s-* targets display — 2026-07-30
 
 ## Development Setup
 
