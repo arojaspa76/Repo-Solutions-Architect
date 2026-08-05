@@ -1,0 +1,126 @@
+version: "3.9"
+
+# =============================================================
+# Stack Sesión 7: Agente LLM + Autoescalado
+# =============================================================
+# Servicios:
+#   - llm-agent:    FastAPI + Agente LLM (http://localhost:8000)
+#   - ollama:       LLM local            (http://localhost:11434)
+#   - redis:        Cache                (puerto 6379)
+#   - prometheus:   Métricas             (http://localhost:9090)
+#   - grafana:      Dashboards           (http://localhost:3000, admin/admin)
+#
+# Uso:
+#   docker-compose up -d
+#   docker-compose logs -f llm-agent
+# =============================================================
+
+services:
+
+  llm-agent:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: llm-agent-gateway:session7
+    container_name: bsg-llm-agent
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=docker
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - REDIS_URL=redis://redis:6379/0
+      - ENABLE_CACHE=true
+      - AGENT_MAX_STEPS=8
+      - AGENT_TIMEOUT=60
+      - PROMETHEUS_ENABLED=true
+    depends_on:
+      ollama:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: bsg-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: bsg-ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ollama-data:/root/.ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "⏳ Descargando llama3.2:3b (primera vez ~2GB)..."
+        OLLAMA_HOST=http://ollama:11434 ollama pull llama3.2:3b
+        echo "✅ Modelo listo para el agente"
+    restart: "no"
+
+  redis:
+    image: redis:7-alpine
+    container_name: bsg-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: bsg-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=7d'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: bsg-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  ollama-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:
