@@ -31,61 +31,63 @@ session7-autoscaling-load-testing/
 ├── agents/                       # ← NOVEDAD Sesión 7: Agente LLM
 │   ├── llm_agent/
 │   │   ├── agent.py              # Agente ReAct con herramientas
-│   │   └── prompts.py            # Prompts del sistema
+│   │   └── prompts.py            # Prompts del sistema + few-shot examples
 │   └── tools/
-│       ├── calculator.py         # Herramienta: calculadora
-│       ├── weather.py            # Herramienta: clima (mock)
-│       └── search.py             # Herramienta: búsqueda (mock)
+│       ├── calculator.py         # Herramienta: calculadora (eval seguro AST)
+│       ├── weather.py            # Herramienta: clima (mock 20+ ciudades)
+│       └── search.py             # Herramienta: búsqueda (knowledge base del curso)
+│
+├── docker/
+│   └── Dockerfile                # Multi-stage build (builder + runtime)
 │
 ├── kubernetes/                   # Autoescalado K8s
 │   ├── local/
-│   │   ├── deployment.yaml       # Deployment + Services
-│   │   ├── hpa.yaml              # HPA CPU/RAM
-│   │   └── metrics-server.yaml   # Metrics Server
+│   │   ├── deployment.yaml       # Deployment + Services (Minikube)
+│   │   └── hpa.yaml              # HPA CPU 60% / RAM 75%
 │   ├── azure/
-│   │   ├── cluster-setup.sh      # AKS + KEDA
-│   │   ├── hpa-azure.yaml        # HPA para AKS
-│   │   └── keda-scaler.yaml      # KEDA ScaledObject
+│   │   ├── cluster-setup.sh      # AKS + KEDA setup completo
+│   │   ├── hpa-azure.yaml        # HPA para AKS (maxReplicas 15)
+│   │   └── keda-scaler.yaml      # KEDA ScaledObject HTTP + Prometheus
 │   ├── gcp/
-│   │   ├── cluster-setup.sh      # GKE Autopilot
-│   │   └── hpa-gcp.yaml
+│   │   ├── cluster-setup.sh      # GKE Autopilot setup
+│   │   └── hpa-gcp.yaml          # HPA + VPA para GKE
 │   └── aws/
-│       ├── cluster-setup.sh      # EKS + Karpenter
-│       └── hpa-aws.yaml
+│       ├── cluster-setup.sh      # EKS + Karpenter setup
+│       └── hpa-aws.yaml          # HPA + NodePool Karpenter (spot)
 │
 ├── loadtesting/                  # Pruebas de carga
 │   ├── k6/
-│   │   ├── smoke-test.js         # Sanidad rápida (5 VUs, 1 min)
-│   │   ├── load-test.js          # Carga normal con agente LLM
-│   │   ├── stress-test.js        # Estrés: buscar punto de quiebre
-│   │   └── spike-test.js         # Picos súbitos
+│   │   ├── smoke-test.js         # Sanidad rápida (3 VUs, 2 min)
+│   │   ├── load-test.js          # Carga normal (25-40 VUs, 10 min)
+│   │   ├── stress-test.js        # Estrés: buscar punto de quiebre (75 VUs)
+│   │   └── spike-test.js         # Picos súbitos (0→50→0 VUs)
 │   ├── locust/
-│   │   └── locustfile.py         # Alternativa Python
+│   │   └── locustfile.py         # Alternativa Python con UI web
 │   └── results/
-│       └── .gitkeep
+│       └── .gitkeep              # Aquí se guardan los JSON de k6
 │
 ├── scripts/
 │   ├── setup-local.sh            # Setup completo en 1 comando
-│   ├── benchmark-agent.py        # Benchmark multi-cloud del agente
-│   └── analyze-results.py        # Análisis de resultados con visualización
+│   ├── benchmark-agent.py        # Benchmark multi-cloud con tabla Rich
+│   └── analyze-results.py        # Análisis de JSONs de k6 con recomendaciones
 │
 ├── monitoring/
-│   ├── prometheus.yml            # Config Prometheus
+│   ├── prometheus.yml            # Config Prometheus (scrape del agente)
 │   └── grafana/
-│       └── dashboard-agent.json  # Dashboard Grafana para el agente
+│       └── dashboard-agent.json  # Dashboard Grafana: P50/P95, tool calls, steps
 │
 ├── docs/
-│   ├── AGENT_ARCHITECTURE.md     # Arquitectura del agente ReAct
-│   ├── AUTOSCALING_GUIDE.md      # Guía HPA/KEDA en 3 nubes
-│   └── LOAD_TESTING_GUIDE.md     # Metodología de pruebas de carga
+│   ├── AGENT_ARCHITECTURE.md     # Patrón ReAct, herramientas, seguridad, escalabilidad
+│   ├── AUTOSCALING_GUIDE.md      # Guía HPA/KEDA/Karpenter en 3 nubes + troubleshooting
+│   └── LOAD_TESTING_GUIDE.md     # Metodología: smoke→load→stress→spike + análisis
 │
 ├── tests/
-│   ├── test_agent.py             # Tests unitarios del agente
-│   └── test_api.py               # Tests de integración FastAPI
+│   ├── test_agent.py             # Tests unitarios: calculadora, weather, search, parser ReAct
+│   └── test_api.py               # Tests integración FastAPI: health, /agent/run, /chat, /metrics
 │
-├── docker-compose.yml            # Stack: app + ollama + redis + prometheus + grafana
-├── .env.example                  # Variables de entorno
-└── requirements.txt
+├── docker-compose.yml            # Stack: llm-agent + ollama + redis + prometheus + grafana
+├── .env.example                  # Variables de entorno (copiar a .env)
+└── requirements.txt              # Dependencias Python
 ```
 
 ---

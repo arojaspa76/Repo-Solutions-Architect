@@ -1,0 +1,72 @@
+# =============================================================
+# HPA — Azure AKS (Sesión 7)
+# HorizontalPodAutoscaler para el Agente LLM en AKS
+# =============================================================
+# Diferencias vs hpa.yaml local:
+#   - maxReplicas más alto (AKS tiene más capacidad)
+#   - CPU threshold 60% (agente consume más que una API simple)
+#   - Anotaciones para Azure Monitor
+# =============================================================
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: llm-agent-hpa
+  namespace: llm-prod
+  annotations:
+    # Azure Monitor — integración nativa con AKS
+    azure.com/metrics-source: "azure-monitor"
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: llm-agent-gateway
+
+  minReplicas: 2      # Mínimo 2 para HA
+  maxReplicas: 15     # AKS con Cluster Autoscaler puede crecer
+
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60   # Más agresivo que APIs simples (70%)
+
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 3           # AKS puede agregar 3 pods a la vez
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+
+# =============================================================
+# Comandos útiles en AKS:
+#
+# Ver HPA:
+#   kubectl get hpa -n llm-prod -w
+#
+# Ver eventos de escalado:
+#   kubectl describe hpa llm-agent-hpa -n llm-prod
+#
+# Ver métricas en Azure Monitor:
+#   Portal Azure → AKS → Insights → Workbooks
+#
+# Load test para disparar HPA:
+#   k6 run -e BASE_URL=http://<AKS-IP> loadtesting/k6/load-test.js
+# =============================================================

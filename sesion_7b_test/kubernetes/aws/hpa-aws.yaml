@@ -1,0 +1,113 @@
+# =============================================================
+# HPA — AWS EKS + Karpenter (Sesión 7)
+# HorizontalPodAutoscaler para el Agente LLM en EKS
+# =============================================================
+# EKS con Karpenter: el provisionador de nodos más rápido.
+# Karpenter provisiona nodos en <2 min (vs 5-10 con CA).
+#
+# Flujo completo:
+#   HPA crea pods → Karpenter ve pods Pending →
+#   Karpenter elige instancia spot más barata →
+#   Nodo listo en <2 min → Pods se ubican
+# =============================================================
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: llm-agent-hpa
+  namespace: llm-prod
+  annotations:
+    # CloudWatch — observabilidad nativa en EKS
+    aws.amazon.com/metrics-namespace: "LLMAgent"
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: llm-agent-gateway
+
+  minReplicas: 2
+  maxReplicas: 20    # Karpenter puede provisionar muchos nodos spot
+
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 4
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+
+---
+# Karpenter NodePool — define qué nodos puede provisionar
+# Prefiere Spot (hasta 90% más barato), fallback a On-Demand
+apiVersion: karpenter.sh/v1beta1
+kind: NodePool
+metadata:
+  name: llm-agent-pool
+spec:
+  template:
+    metadata:
+      labels:
+        workload: llm-agent
+    spec:
+      requirements:
+        # Spot primero, luego on-demand si no hay spot
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot", "on-demand"]
+        # Tipos de instancia con suficiente RAM para el agente
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values:
+            - "t3.medium"     # 2 vCPU, 4GB RAM
+            - "t3.large"      # 2 vCPU, 8GB RAM
+            - "t3a.medium"    # AMD, más barato
+            - "m5.large"      # 2 vCPU, 8GB RAM (producción)
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+      nodeClassRef:
+        apiVersion: karpenter.k8s.aws/v1beta1
+        kind: EC2NodeClass
+        name: default
+  limits:
+    cpu: "40"          # Máximo 40 vCPU en este pool
+    memory: "80Gi"
+  disruption:
+    consolidationPolicy: WhenUnderutilized   # Consolida pods → menos nodos
+    consolidateAfter: 30s
+
+# =============================================================
+# Ver nodos provisionados por Karpenter:
+#   kubectl get nodes -l karpenter.sh/provisioner-name=llm-agent-pool
+#
+# Ver HPA en EKS:
+#   kubectl get hpa -n llm-prod -w
+#
+# Ver logs de Karpenter:
+#   kubectl logs -n kube-system -l app.kubernetes.io/name=karpenter -f
+#
+# CloudWatch dashboard:
+#   AWS Console → CloudWatch → Container Insights → EKS
+# =============================================================
